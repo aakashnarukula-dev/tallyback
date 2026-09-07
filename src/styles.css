@@ -1271,6 +1271,14 @@ a {
   background: var(--paper);
 }
 
+.truecaller-activation-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: transparent;
+  touch-action: manipulation;
+}
+
 .login-story {
   min-height: 100vh;
   display: flex;

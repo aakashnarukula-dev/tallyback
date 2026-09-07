@@ -49,7 +49,12 @@ import {
   subscribeToEntries,
   toE164,
 } from './firebase-ledger'
-import { canAttemptAutomaticTruecaller, signInWithTruecaller } from './truecaller'
+import {
+  canAttemptAutomaticTruecaller,
+  prepareTruecaller,
+  signInWithTruecaller,
+  TruecallerInit,
+} from './truecaller'
 import SplitPublicPage from './SplitPublicPage'
 import SplitWorkspace from './SplitWorkspace'
 
@@ -143,14 +148,37 @@ function LoginScreen({
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
   const [truecallerWorking, setTruecallerWorking] = useState(false)
+  const [truecallerArmed, setTruecallerArmed] = useState(false)
   const truecallerController = useRef<AbortController | null>(null)
+  const truecallerInit = useRef<TruecallerInit | null>(null)
 
   useEffect(() => {
     if (!auth || !isFirebaseConfigured || !canAttemptAutomaticTruecaller()) return
     const controller = new AbortController()
     truecallerController.current = controller
 
+    prepareTruecaller().then((prepared) => {
+      if (!prepared || controller.signal.aborted) return
+      truecallerInit.current = prepared
+      setTruecallerArmed(true)
+    })
+
+    return () => {
+      controller.abort()
+      if (truecallerController.current === controller) truecallerController.current = null
+      truecallerInit.current = null
+    }
+  }, [])
+
+  function activateTruecaller() {
+    const prepared = truecallerInit.current
+    const controller = truecallerController.current
+    if (!prepared || !controller || controller.signal.aborted || working || confirmation) return
+
+    truecallerInit.current = null
+    setTruecallerArmed(false)
     signInWithTruecaller({
+      prepared,
       signal: controller.signal,
       onLaunch: () => setTruecallerWorking(true),
       onFallback: () => setTruecallerWorking(false),
@@ -168,18 +196,15 @@ function LoginScreen({
       }
       setTruecallerWorking(false)
     })
-
-    return () => {
-      controller.abort()
-      if (truecallerController.current === controller) truecallerController.current = null
-    }
-  }, [onAuthenticated])
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
     truecallerController.current?.abort()
     truecallerController.current = null
+    truecallerInit.current = null
+    setTruecallerArmed(false)
     setTruecallerWorking(false)
 
     if (confirmation) {
@@ -243,6 +268,14 @@ function LoginScreen({
 
   return (
     <main className="login-page">
+      {truecallerArmed && (
+        <div
+          className="truecaller-activation-layer"
+          aria-hidden="true"
+          onPointerDown={activateTruecaller}
+          onClick={activateTruecaller}
+        />
+      )}
       <section className="login-story">
         <a className="brand brand-on-dark" href="#" aria-label="TallyBack home">
           <BrandMark />

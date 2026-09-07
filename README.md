@@ -18,6 +18,8 @@ The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and
 
 Contact numbers are stored under each split's private `contacts` subcollection. The public split document contains only display names, share amounts, and payment status. Firestore rules scope the ledger to participants and the split editor to its owner.
 
+On Android, TallyBack prewarms the Truecaller request while authentication loads. A transparent one-use activation layer then launches the prepared deep link from the first real touch, satisfying Chrome's requirement that external apps open from a user gesture without exposing a separate Truecaller button.
+
 ## Local setup
 
 ```bash

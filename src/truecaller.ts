@@ -15,14 +15,25 @@ type TruecallerStatus = {
 }
 
 type AutomaticTruecallerOptions = {
+  prepared?: TruecallerInit
   signal?: AbortSignal
   onLaunch?: () => void
   onFallback?: () => void
 }
 
+export type TruecallerInit = {
+  nonce: string
+  deeplink: string
+  preparedAt: number
+}
+
 const apiBase = String(import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
 
 const capabilityKey = 'tallyback_truecaller_capability_v1'
+const prewarmTtlMs = 9 * 60 * 1000
+
+let prewarmedTruecaller: TruecallerInit | null = null
+let prewarmRequest: Promise<TruecallerInit | null> | null = null
 
 function abortError() {
   return new DOMException('Truecaller sign-in was cancelled.', 'AbortError')
@@ -72,10 +83,10 @@ function rememberTruecallerDevice() {
 function fireDeeplink(deeplink: string) {
   const frame = document.createElement('iframe')
   frame.setAttribute('aria-hidden', 'true')
-  frame.style.display = 'none'
+  frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden;'
   frame.src = deeplink
   document.body.appendChild(frame)
-  window.setTimeout(() => frame.remove(), 2_000)
+  window.setTimeout(() => frame.remove(), 200)
 }
 
 function apiError(code?: string) {
@@ -85,7 +96,35 @@ function apiError(code?: string) {
   return 'Truecaller sign-in could not be completed. You can use SMS instead.'
 }
 
+export function prepareTruecaller(): Promise<TruecallerInit | null> {
+  if (!apiBase || !canAttemptAutomaticTruecaller()) return Promise.resolve(null)
+  if (prewarmedTruecaller && Date.now() - prewarmedTruecaller.preparedAt < prewarmTtlMs) {
+    return Promise.resolve(prewarmedTruecaller)
+  }
+  if (prewarmRequest) return prewarmRequest
+
+  prewarmRequest = fetch(`${apiBase}/api/truecaller/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  }).then(async (response) => {
+    const result = await response.json().catch(() => ({})) as { nonce?: string; deeplink?: string }
+    if (!response.ok || !result.nonce || !result.deeplink) return null
+    prewarmedTruecaller = {
+      nonce: result.nonce,
+      deeplink: result.deeplink,
+      preparedAt: Date.now(),
+    }
+    return prewarmedTruecaller
+  }).catch(() => null).finally(() => {
+    prewarmRequest = null
+  })
+
+  return prewarmRequest
+}
+
 export async function signInWithTruecaller({
+  prepared,
   signal,
   onLaunch,
   onFallback,
@@ -94,24 +133,28 @@ export async function signInWithTruecaller({
   if (!apiBase) throw new Error('Truecaller sign-in is not configured yet. You can use SMS instead.')
   if (!canAttemptAutomaticTruecaller()) return null
 
-  const initResponse = await fetch(`${apiBase}/api/truecaller/init`, { method: 'POST', signal })
-  const init = await initResponse.json().catch(() => ({})) as { nonce?: string; deeplink?: string; error?: string }
-  if (!initResponse.ok || !init.nonce || !init.deeplink) throw new Error(apiError(init.error))
+  const init = prepared || await prepareTruecaller()
+  if (!init) throw new Error(apiError())
+  if (prewarmedTruecaller?.nonce === init.nonce) prewarmedTruecaller = null
 
   let appOpened = false
-  let returnedAt = 0
   let fallbackShown = false
+  let returnTimer: number | null = null
   const markOpened = () => {
     if (appOpened) return
     appOpened = true
+    if (returnTimer) window.clearTimeout(returnTimer)
     rememberTruecallerDevice()
     onLaunch?.()
   }
   const watchVisibility = () => {
     if (document.hidden || !document.hasFocus()) {
       markOpened()
-    } else if (appOpened) {
-      returnedAt = Date.now()
+    } else if (appOpened && !fallbackShown && !returnTimer) {
+      returnTimer = window.setTimeout(() => {
+        fallbackShown = true
+        onFallback?.()
+      }, 250)
     }
   }
 
@@ -119,6 +162,7 @@ export async function signInWithTruecaller({
   window.addEventListener('blur', watchVisibility)
   window.addEventListener('focus', watchVisibility)
   window.addEventListener('pagehide', markOpened)
+  const focusTimer = window.setInterval(watchVisibility, 200)
   fireDeeplink(init.deeplink)
 
   const detectionDeadline = Date.now() + (knownTruecallerDevice() ? 7_000 : 4_500)
@@ -138,12 +182,10 @@ export async function signInWithTruecaller({
       if (result.status !== 'pending') throw new Error(apiError(result.error || result.status))
 
       if (!appOpened && Date.now() >= detectionDeadline) return null
-      if (appOpened && returnedAt && !fallbackShown && Date.now() - returnedAt >= 2_500) {
-        fallbackShown = true
-        onFallback?.()
-      }
     }
   } finally {
+    window.clearInterval(focusTimer)
+    if (returnTimer) window.clearTimeout(returnTimer)
     document.removeEventListener('visibilitychange', watchVisibility)
     window.removeEventListener('blur', watchVisibility)
     window.removeEventListener('focus', watchVisibility)
@@ -152,4 +194,8 @@ export async function signInWithTruecaller({
 
   onFallback?.()
   return null
+}
+
+if (typeof window !== 'undefined' && canAttemptAutomaticTruecaller()) {
+  void prepareTruecaller()
 }
