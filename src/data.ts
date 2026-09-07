@@ -21,25 +21,20 @@ export type LedgerEntry = {
   status: 'open' | 'settled'
   settledAt?: string
   createdBy?: string
+  review?: LedgerReview
 }
 
 export type ReviewKind = 'amount' | 'paid'
 
 export type LedgerReview = {
-  id: string
-  entryId: string
-  participantPhones: string[]
-  lenderPhone: string
-  borrowerPhone: string
   requestedByUid: string
   requestedByPhone: string
   kind: ReviewKind
   proposedAmount: number
   note: string
-  status: 'pending' | 'approved' | 'rejected'
+  status: 'pending'
   createdAt?: unknown
   updatedAt?: unknown
-  resolvedAt?: unknown
 }
 
 export const AVATAR_COLORS = [

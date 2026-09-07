@@ -54,7 +54,6 @@ import {
   createReviewRequest,
   resolveReviewRequest,
   ReviewDraft,
-  subscribeToReviews,
 } from './firebase-reviews'
 import {
   canAttemptAutomaticTruecaller,
@@ -687,8 +686,8 @@ function PersonDrawer({
                     </div>
                     {direction === 'receivable' ? (
                       <div className="review-actions">
-                        <button type="button" disabled={resolvingReviewId === review.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
-                        <button type="button" disabled={resolvingReviewId === review.id} onClick={() => onResolveReview(review, entry, 'approved')}>
+                        <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
+                        <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'approved')}>
                           {review.kind === 'amount' ? 'Use new amount' : 'Confirm paid'}
                         </button>
                       </div>
@@ -714,7 +713,6 @@ function PersonDrawer({
 function TallyBackApp() {
   const [currentUser, setCurrentUser] = useState<Person | null>(null)
   const [entries, setEntries] = useState<LedgerEntry[]>([])
-  const [reviews, setReviews] = useState<LedgerReview[]>([])
   const [authLoading, setAuthLoading] = useState(isFirebaseConfigured)
   const [dataLoading, setDataLoading] = useState(false)
   const [direction, setDirection] = useState<Direction>('receivable')
@@ -760,14 +758,13 @@ function TallyBackApp() {
   useEffect(() => {
     if (!currentUser) {
       setEntries([])
-      setReviews([])
       return
     }
 
     if (!auth?.currentUser || !isFirebaseConfigured) return
 
     setDataLoading(true)
-    const unsubscribeEntries = subscribeToEntries(
+    return subscribeToEntries(
       currentUser.phone,
       (cloudEntries) => {
         setEntries(cloudEntries)
@@ -778,15 +775,6 @@ function TallyBackApp() {
         setToast('Could not sync your ledger. Check the Firebase setup and try again.')
       },
     )
-    const unsubscribeReviews = subscribeToReviews(
-      currentUser.phone,
-      setReviews,
-      () => setToast('Your ledger loaded, but review requests could not be synced.'),
-    )
-    return () => {
-      unsubscribeEntries()
-      unsubscribeReviews()
-    }
   }, [currentUser])
 
   useEffect(() => {
@@ -809,29 +797,28 @@ function TallyBackApp() {
   }, [])
 
   const userPhone = normalizePhone(currentUser?.phone ?? '')
-  const currentUid = auth?.currentUser?.uid
   const relevantEntries = useMemo(() => {
-    if (!currentUser || !currentUid) return []
+    if (!currentUser) return []
     return entries.filter((entry) =>
       direction === 'receivable'
-        ? normalizePhone(entry.lender.phone) === userPhone && entry.createdBy === currentUid
-        : normalizePhone(entry.borrower.phone) === userPhone && entry.createdBy !== currentUid,
+        ? normalizePhone(entry.lender.phone) === userPhone
+        : normalizePhone(entry.borrower.phone) === userPhone,
     )
-  }, [currentUid, currentUser, direction, entries, userPhone])
+  }, [currentUser, direction, entries, userPhone])
 
   const pendingReviews = useMemo(() => {
     const pending = new Map<string, LedgerReview>()
-    reviews.forEach((review) => {
-      if (review.status === 'pending') pending.set(review.entryId, review)
+    entries.forEach((entry) => {
+      if (entry.review?.status === 'pending') pending.set(entry.id, entry.review)
     })
     return pending
-  }, [reviews])
+  }, [entries])
 
   const incomingReviewEntries = useMemo(() => entries.filter((entry) => (
-    entry.createdBy === currentUid
+    normalizePhone(entry.lender.phone) === userPhone
       && entry.status === 'open'
       && pendingReviews.has(entry.id)
-  )), [currentUid, entries, pendingReviews])
+  )), [entries, pendingReviews, userPhone])
 
   const summaries = useMemo(() => {
     const grouped = new Map<string, ContactSummary>()
@@ -890,7 +877,12 @@ function TallyBackApp() {
   async function saveEntry(entry: LedgerEntry) {
     try {
       if (auth?.currentUser) {
-        await createFirebaseEntry(entry, auth.currentUser.uid)
+        const creatorUid = auth.currentUser.uid
+        await createFirebaseEntry(entry, creatorUid)
+        setEntries((currentEntries) => [
+          { ...entry, createdBy: creatorUid },
+          ...currentEntries.filter((currentEntry) => currentEntry.id !== entry.id),
+        ])
       } else {
         throw new Error('Sign in required')
       }
@@ -925,7 +917,7 @@ function TallyBackApp() {
     decision: 'approved' | 'rejected',
   ) {
     try {
-      setResolvingReviewId(review.id)
+      setResolvingReviewId(entry.id)
       await resolveReviewRequest(review, entry, decision)
       setToast(decision === 'approved' ? 'Correction approved and ledger updated.' : 'Review closed without changing the entry.')
     } catch {

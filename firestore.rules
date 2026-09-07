@@ -35,6 +35,45 @@ service cloud.firestore {
         && data.participantPhones.hasAny([phone()]);
     }
 
+    function validPendingReview(review, entry) {
+      return review is map
+        && review.keys().hasAll([
+          'requestedByUid',
+          'requestedByPhone',
+          'kind',
+          'proposedAmount',
+          'note',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && review.keys().hasOnly([
+          'requestedByUid',
+          'requestedByPhone',
+          'kind',
+          'proposedAmount',
+          'note',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && review.requestedByUid is string
+        && review.requestedByPhone is string
+        && review.requestedByPhone == entry.borrowerPhone
+        && review.kind in ['amount', 'paid']
+        && review.proposedAmount is number
+        && (
+          (review.kind == 'amount' && review.proposedAmount > 0)
+          || (review.kind == 'paid' && review.proposedAmount == 0)
+        )
+        && review.note is string
+        && review.note.size() <= 280
+        && review.status == 'pending'
+        && review.createdAt is timestamp
+        && review.updatedAt is timestamp
+        && entry.status == 'open';
+    }
+
     function validEntry(data) {
       return data.keys().hasAll([
           'lender',
@@ -65,7 +104,8 @@ service cloud.firestore {
           'createdBy',
           'createdAt',
           'updatedAt',
-          'settledAt'
+          'settledAt',
+          'review'
         ])
         && data.lender is map
         && data.borrower is map
@@ -89,7 +129,11 @@ service cloud.firestore {
         && data.occasion.size() > 0
         && data.method in ['UPI', 'Credit card', 'Cash', 'Bank transfer', 'Personal funds']
         && data.date is string
-        && data.status in ['open', 'settled'];
+        && data.status in ['open', 'settled']
+        && (
+          !data.keys().hasAny(['review'])
+          || validPendingReview(data.review, data)
+        );
     }
 
     function validProfile(data) {
@@ -99,88 +143,6 @@ service cloud.firestore {
         && data.name.size() > 0
         && data.phone is string
         && data.updatedAt == request.time;
-    }
-
-    function reviewEntry(data) {
-      return get(/databases/$(database)/documents/ledgerEntries/$(data.entryId)).data;
-    }
-
-    function validReview(data) {
-      return data.keys().hasAll([
-          'entryId',
-          'participantPhones',
-          'lenderPhone',
-          'borrowerPhone',
-          'requestedByUid',
-          'requestedByPhone',
-          'kind',
-          'proposedAmount',
-          'note',
-          'status',
-          'createdAt',
-          'updatedAt'
-        ])
-        && data.keys().hasOnly([
-          'entryId',
-          'participantPhones',
-          'lenderPhone',
-          'borrowerPhone',
-          'requestedByUid',
-          'requestedByPhone',
-          'kind',
-          'proposedAmount',
-          'note',
-          'status',
-          'createdAt',
-          'updatedAt',
-          'resolvedAt'
-        ])
-        && data.entryId is string
-        && data.entryId.size() > 0
-        && data.participantPhones is list
-        && data.participantPhones.size() == 2
-        && data.lenderPhone is string
-        && data.borrowerPhone is string
-        && data.participantPhones.hasAll([data.lenderPhone, data.borrowerPhone])
-        && data.requestedByUid is string
-        && data.requestedByPhone is string
-        && data.kind in ['amount', 'paid']
-        && data.proposedAmount is number
-        && (
-          (data.kind == 'amount' && data.proposedAmount > 0)
-          || (data.kind == 'paid' && data.proposedAmount == 0)
-        )
-        && data.note is string
-        && data.note.size() <= 280
-        && data.status in ['pending', 'approved', 'rejected'];
-    }
-
-    function reviewMatchesEntry(data) {
-      return exists(/databases/$(database)/documents/ledgerEntries/$(data.entryId))
-        && reviewEntry(data).status == 'open'
-        && data.lenderPhone == reviewEntry(data).lenderPhone
-        && data.borrowerPhone == reviewEntry(data).borrowerPhone
-        && data.participantPhones.hasAll([
-          reviewEntry(data).lenderPhone,
-          reviewEntry(data).borrowerPhone
-        ]);
-    }
-
-    function approvedReviewApplied(data) {
-      return data.status == 'rejected'
-        || (
-          data.status == 'approved'
-          && (
-            (
-              data.kind == 'amount'
-              && getAfter(/databases/$(database)/documents/ledgerEntries/$(data.entryId)).data.amount == data.proposedAmount
-            )
-            || (
-              data.kind == 'paid'
-              && getAfter(/databases/$(database)/documents/ledgerEntries/$(data.entryId)).data.status == 'settled'
-            )
-          )
-        );
     }
 
     function ownsSplit(splitId) {
@@ -254,6 +216,7 @@ service cloud.firestore {
       allow read: if isParticipant(resource.data);
       allow create: if validEntry(request.resource.data)
         && isParticipant(request.resource.data)
+        && !request.resource.data.keys().hasAny(['review'])
         && request.resource.data.lenderPhone == phone()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.createdAt == request.time
@@ -267,6 +230,8 @@ service cloud.firestore {
         && (
           (
             request.auth.uid == resource.data.createdBy
+            &&
+            !resource.data.keys().hasAny(['review'])
             &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['status', 'settledAt', 'updatedAt'])
@@ -292,34 +257,55 @@ service cloud.firestore {
                 'updatedAt'
               ])
           )
+          ||
+          (
+            phone() == resource.data.borrowerPhone
+            && request.auth.uid != resource.data.createdBy
+            && resource.data.status == 'open'
+            && !resource.data.keys().hasAny(['review'])
+            && request.resource.data.keys().hasAny(['review'])
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['review', 'updatedAt'])
+            && request.resource.data.review.requestedByUid == request.auth.uid
+            && request.resource.data.review.requestedByPhone == phone()
+            && request.resource.data.review.createdAt == request.time
+            && request.resource.data.review.updatedAt == request.time
+          )
+          ||
+          (
+            request.auth.uid == resource.data.createdBy
+            && resource.data.status == 'open'
+            && resource.data.keys().hasAny(['review'])
+            && !request.resource.data.keys().hasAny(['review'])
+            && (
+              (
+                resource.data.review.kind == 'amount'
+                && request.resource.data.status == 'open'
+                && request.resource.data.amount == resource.data.review.proposedAmount
+                && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['amount', 'review', 'updatedAt'])
+              )
+              ||
+              (
+                resource.data.review.kind == 'paid'
+                && request.resource.data.status == 'settled'
+                && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['status', 'settledAt', 'review', 'updatedAt'])
+              )
+              ||
+              (
+                request.resource.data.status == 'open'
+                && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['review', 'updatedAt'])
+              )
+            )
+          )
         );
       allow delete: if false;
     }
 
     match /ledgerReviews/{reviewId} {
-      allow read: if isParticipant(resource.data);
-      allow create: if signedInWithPhone()
-        && validReview(request.resource.data)
-        && reviewMatchesEntry(request.resource.data)
-        && reviewEntry(request.resource.data).createdBy != request.auth.uid
-        && request.resource.data.requestedByUid == request.auth.uid
-        && request.resource.data.requestedByPhone == phone()
-        && request.resource.data.borrowerPhone == phone()
-        && request.resource.data.status == 'pending'
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if signedInWithPhone()
-        && validReview(request.resource.data)
-        && request.auth.uid == reviewEntry(resource.data).createdBy
-        && phone() == resource.data.lenderPhone
-        && resource.data.status == 'pending'
-        && request.resource.data.status in ['approved', 'rejected']
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'resolvedAt', 'updatedAt'])
-        && request.resource.data.resolvedAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && approvedReviewApplied(request.resource.data);
-      allow delete: if false;
+      allow read, write: if false;
     }
 
     match /splitPages/{splitId} {
