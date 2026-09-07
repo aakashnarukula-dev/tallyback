@@ -17,10 +17,10 @@ import {
   ChevronDown,
   ChevronLeft,
   CreditCard,
+  Flag,
   History,
   Landmark,
   LogOut,
-  MoreHorizontal,
   Plus,
   ReceiptText,
   Search,
@@ -36,6 +36,7 @@ import {
   avatarColor,
   initials,
   LedgerEntry,
+  LedgerReview,
   normalizePhone,
   PaymentMethod,
   Person,
@@ -49,6 +50,12 @@ import {
   subscribeToEntries,
   toE164,
 } from './firebase-ledger'
+import {
+  createReviewRequest,
+  resolveReviewRequest,
+  ReviewDraft,
+  subscribeToReviews,
+} from './firebase-reviews'
 import {
   canAttemptAutomaticTruecaller,
   prepareTruecaller,
@@ -382,17 +389,14 @@ function LoginScreen({
 }
 
 function AddEntryModal({
-  initialDirection,
   currentUser,
   onClose,
   onSave,
 }: {
-  initialDirection: Direction
   currentUser: Person
   onClose: () => void
   onSave: (entry: LedgerEntry) => void
 }) {
-  const [direction, setDirection] = useState(initialDirection)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [amount, setAmount] = useState('')
@@ -416,8 +420,8 @@ function AddEntryModal({
     const other = { name: name.trim(), phone: normalizePhone(phone) }
     onSave({
       id: `loan-${Date.now()}`,
-      lender: direction === 'receivable' ? currentUser : other,
-      borrower: direction === 'receivable' ? other : currentUser,
+      lender: currentUser,
+      borrower: other,
       amount: numericAmount,
       occasion: occasion.trim(),
       method,
@@ -446,30 +450,14 @@ function AddEntryModal({
         </div>
 
         <form onSubmit={submit}>
-          <div className="direction-picker" aria-label="Choose who paid">
-            <button
-              type="button"
-              className={direction === 'receivable' ? 'active' : ''}
-              onClick={() => setDirection('receivable')}
-            >
-              <ArrowDownLeft size={18} />
-              <span><strong>I paid</strong><small>They owe me</small></span>
-              {direction === 'receivable' && <Check size={17} />}
-            </button>
-            <button
-              type="button"
-              className={direction === 'payable' ? 'active' : ''}
-              onClick={() => setDirection('payable')}
-            >
-              <ArrowUpRight size={18} />
-              <span><strong>They paid</strong><small>I owe them</small></span>
-              {direction === 'payable' && <Check size={17} />}
-            </button>
+          <div className="entry-authorship-note">
+            <ArrowDownLeft size={18} />
+            <div><strong>You paid</strong><span>This entry will appear under “I owe you” for the other person.</span></div>
           </div>
 
           <div className="form-grid">
             <label>
-              {direction === 'receivable' ? 'Who owes you?' : 'Who do you owe?'}
+              Who owes you?
               <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" autoFocus />
             </label>
             <label>
@@ -522,16 +510,137 @@ function AddEntryModal({
   )
 }
 
+function ReviewRequestModal({
+  entry,
+  onClose,
+  onSend,
+}: {
+  entry: LedgerEntry
+  onClose: () => void
+  onSend: (draft: ReviewDraft) => Promise<void>
+}) {
+  const [kind, setKind] = useState<ReviewDraft['kind']>('amount')
+  const [amount, setAmount] = useState(String(entry.amount))
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    const proposedAmount = kind === 'amount' ? Number(amount) : 0
+    if (kind === 'amount' && (!Number.isFinite(proposedAmount) || proposedAmount <= 0)) {
+      setError('Enter the amount you believe is correct.')
+      return
+    }
+    if (kind === 'amount' && proposedAmount === entry.amount) {
+      setError('Enter an amount different from the current record.')
+      return
+    }
+
+    try {
+      setWorking(true)
+      setError('')
+      await onSend({ kind, proposedAmount, note })
+      onClose()
+    } catch {
+      setError('Could not send this review request. Please try again.')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="modal-card review-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-request-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-header">
+          <div>
+            <p className="modal-kicker">Request a correction</p>
+            <h2 id="review-request-title">What needs reviewing?</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="review-entry-context">
+          <span>{entry.occasion}</span>
+          <strong>{money.format(entry.amount)}</strong>
+          <small>Recorded by {entry.lender.name}</small>
+        </div>
+
+        <form onSubmit={submit}>
+          <div className="review-reason-picker" aria-label="Choose what is incorrect">
+            <button type="button" className={kind === 'amount' ? 'active' : ''} aria-pressed={kind === 'amount'} onClick={() => setKind('amount')}>
+              <Banknote size={18} />
+              <span><strong>Wrong amount</strong><small>Suggest the correct amount</small></span>
+              {kind === 'amount' ? <Check size={17} /> : null}
+            </button>
+            <button type="button" className={kind === 'paid' ? 'active' : ''} aria-pressed={kind === 'paid'} onClick={() => setKind('paid')}>
+              <CheckCircle2 size={18} />
+              <span><strong>Already paid</strong><small>Ask them to close this entry</small></span>
+              {kind === 'paid' ? <Check size={17} /> : null}
+            </button>
+          </div>
+
+          {kind === 'amount' ? (
+            <label className="review-field">
+              Correct amount
+              <div className="money-input">
+                <span>₹</span>
+                <input
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
+                  inputMode="decimal"
+                  autoFocus
+                />
+              </div>
+            </label>
+          ) : null}
+
+          <label className="review-field">
+            Note <span>(optional)</span>
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value.slice(0, 280))}
+              placeholder={kind === 'amount' ? 'Explain what looks wrong…' : 'Mention when or how you paid…'}
+              rows={3}
+            />
+          </label>
+          {error ? <p className="form-error">{error}</p> : null}
+          <div className="modal-actions">
+            <button className="secondary-button" type="button" onClick={onClose}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={working}>{working ? 'Sending…' : 'Send for review'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function PersonDrawer({
   summary,
   direction,
+  pendingReviews,
+  resolvingReviewId,
   onClose,
   onSettle,
+  onRequestReview,
+  onResolveReview,
 }: {
   summary: ContactSummary
   direction: Direction
+  pendingReviews: Map<string, LedgerReview>
+  resolvingReviewId: string | null
   onClose: () => void
   onSettle: (id: string) => void
+  onRequestReview: (entry: LedgerEntry) => void
+  onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
 }) {
   return (
     <div className="drawer-backdrop" onMouseDown={onClose} role="presentation">
@@ -539,7 +648,7 @@ function PersonDrawer({
         <div className="drawer-topbar">
           <button className="drawer-back" onClick={onClose} aria-label="Close details"><ChevronLeft size={20} /></button>
           <span>Details</span>
-          <button className="icon-button" aria-label="More options"><MoreHorizontal size={20} /></button>
+          <span aria-hidden="true" />
         </div>
         <div className="person-hero">
           <Avatar person={summary.person} size="lg" />
@@ -556,15 +665,40 @@ function PersonDrawer({
           </div>
           {summary.entries.filter((entry) => entry.status === 'open').map((entry) => {
             const Icon = methodIcons[entry.method]
+            const review = pendingReviews.get(entry.id)
             return (
               <article className="drawer-entry" key={entry.id}>
                 <span className="method-icon"><Icon size={17} /></span>
                 <div>
                   <h4>{entry.occasion}</h4>
-                  <p>{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</p>
+                  <p>{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
                 </div>
                 <strong>{money.format(entry.amount)}</strong>
-                <button onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button>
+                {review ? (
+                  <div className={`entry-review ${direction}`}>
+                    <div>
+                      <span className="review-status"><Flag size={13} /> Review pending</span>
+                      <strong>
+                        {review.kind === 'amount'
+                          ? `${entry.borrower.name} says the amount should be ${money.format(review.proposedAmount)}.`
+                          : `${entry.borrower.name} says this has already been paid.`}
+                      </strong>
+                      {review.note ? <p>“{review.note}”</p> : null}
+                    </div>
+                    {direction === 'receivable' ? (
+                      <div className="review-actions">
+                        <button type="button" disabled={resolvingReviewId === review.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
+                        <button type="button" disabled={resolvingReviewId === review.id} onClick={() => onResolveReview(review, entry, 'approved')}>
+                          {review.kind === 'amount' ? 'Use new amount' : 'Confirm paid'}
+                        </button>
+                      </div>
+                    ) : <small>Waiting for {entry.lender.name} to review this.</small>}
+                  </div>
+                ) : direction === 'receivable' ? (
+                  <button className="entry-action" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button>
+                ) : (
+                  <button className="entry-action report" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
+                )}
               </article>
             )
           })}
@@ -580,12 +714,15 @@ function PersonDrawer({
 function TallyBackApp() {
   const [currentUser, setCurrentUser] = useState<Person | null>(null)
   const [entries, setEntries] = useState<LedgerEntry[]>([])
+  const [reviews, setReviews] = useState<LedgerReview[]>([])
   const [authLoading, setAuthLoading] = useState(isFirebaseConfigured)
   const [dataLoading, setDataLoading] = useState(false)
   const [direction, setDirection] = useState<Direction>('receivable')
   const [view, setView] = useState<View>('ledger')
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [reviewEntry, setReviewEntry] = useState<LedgerEntry | null>(null)
+  const [resolvingReviewId, setResolvingReviewId] = useState<string | null>(null)
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [toast, setToast] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
@@ -623,13 +760,14 @@ function TallyBackApp() {
   useEffect(() => {
     if (!currentUser) {
       setEntries([])
+      setReviews([])
       return
     }
 
     if (!auth?.currentUser || !isFirebaseConfigured) return
 
     setDataLoading(true)
-    return subscribeToEntries(
+    const unsubscribeEntries = subscribeToEntries(
       currentUser.phone,
       (cloudEntries) => {
         setEntries(cloudEntries)
@@ -640,6 +778,15 @@ function TallyBackApp() {
         setToast('Could not sync your ledger. Check the Firebase setup and try again.')
       },
     )
+    const unsubscribeReviews = subscribeToReviews(
+      currentUser.phone,
+      setReviews,
+      () => setToast('Your ledger loaded, but review requests could not be synced.'),
+    )
+    return () => {
+      unsubscribeEntries()
+      unsubscribeReviews()
+    }
   }, [currentUser])
 
   useEffect(() => {
@@ -652,6 +799,7 @@ function TallyBackApp() {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setShowAdd(false)
+        setReviewEntry(null)
         setSelectedPhone(null)
         setProfileOpen(false)
       }
@@ -661,14 +809,29 @@ function TallyBackApp() {
   }, [])
 
   const userPhone = normalizePhone(currentUser?.phone ?? '')
+  const currentUid = auth?.currentUser?.uid
   const relevantEntries = useMemo(() => {
-    if (!currentUser) return []
+    if (!currentUser || !currentUid) return []
     return entries.filter((entry) =>
       direction === 'receivable'
-        ? normalizePhone(entry.lender.phone) === userPhone
-        : normalizePhone(entry.borrower.phone) === userPhone,
+        ? normalizePhone(entry.lender.phone) === userPhone && entry.createdBy === currentUid
+        : normalizePhone(entry.borrower.phone) === userPhone && entry.createdBy !== currentUid,
     )
-  }, [currentUser, direction, entries, userPhone])
+  }, [currentUid, currentUser, direction, entries, userPhone])
+
+  const pendingReviews = useMemo(() => {
+    const pending = new Map<string, LedgerReview>()
+    reviews.forEach((review) => {
+      if (review.status === 'pending') pending.set(review.entryId, review)
+    })
+    return pending
+  }, [reviews])
+
+  const incomingReviewEntries = useMemo(() => entries.filter((entry) => (
+    entry.createdBy === currentUid
+      && entry.status === 'open'
+      && pendingReviews.has(entry.id)
+  )), [currentUid, entries, pendingReviews])
 
   const summaries = useMemo(() => {
     const grouped = new Map<string, ContactSummary>()
@@ -731,7 +894,7 @@ function TallyBackApp() {
       } else {
         throw new Error('Sign in required')
       }
-      setDirection(normalizePhone(entry.lender.phone) === userPhone ? 'receivable' : 'payable')
+      setDirection('receivable')
       setView('ledger')
       setShowAdd(false)
       setToast('Entry saved. Both sides now share the same record.')
@@ -748,6 +911,36 @@ function TallyBackApp() {
     } catch {
       setToast('Could not update this entry. Please try again.')
     }
+  }
+
+  async function sendReviewRequest(entry: LedgerEntry, draft: ReviewDraft) {
+    if (!auth?.currentUser) throw new Error('Sign in required')
+    await createReviewRequest(entry, auth.currentUser.uid, draft)
+    setToast('Sent to the person who recorded this entry for review.')
+  }
+
+  async function resolveReview(
+    review: LedgerReview,
+    entry: LedgerEntry,
+    decision: 'approved' | 'rejected',
+  ) {
+    try {
+      setResolvingReviewId(review.id)
+      await resolveReviewRequest(review, entry, decision)
+      setToast(decision === 'approved' ? 'Correction approved and ledger updated.' : 'Review closed without changing the entry.')
+    } catch {
+      setToast('Could not resolve this review request. Please try again.')
+    } finally {
+      setResolvingReviewId(null)
+    }
+  }
+
+  function openFirstIncomingReview() {
+    const entry = incomingReviewEntries[0]
+    if (!entry) return
+    setView('ledger')
+    setDirection('receivable')
+    setSelectedPhone(normalizePhone(entry.borrower.phone))
   }
 
   if (authLoading) {
@@ -793,9 +986,14 @@ function TallyBackApp() {
         <header className="topbar">
           <div className="mobile-logo"><BrandMark /><span>TallyBack</span></div>
           <div className="topbar-actions">
-            <button className="icon-button notification-button" aria-label="Notifications">
+            <button
+              className={`icon-button notification-button ${incomingReviewEntries.length ? 'has-notifications' : ''}`}
+              aria-label={incomingReviewEntries.length ? `Open ${incomingReviewEntries.length} review ${incomingReviewEntries.length === 1 ? 'request' : 'requests'}` : 'No review requests'}
+              onClick={openFirstIncomingReview}
+              disabled={!incomingReviewEntries.length}
+            >
               <Bell size={19} />
-              <span />
+              {incomingReviewEntries.length ? <span /> : null}
             </button>
             <div className="profile-wrap">
               <button
@@ -827,9 +1025,11 @@ function TallyBackApp() {
                     <p>{new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</p>
                     <h1>Hello, {currentUser.name.split(' ')[0]}.</h1>
                   </div>
-                  <button className="primary-button desktop-add" onClick={() => setShowAdd(true)}>
-                    <Plus size={18} /> Add entry
-                  </button>
+                  {direction === 'receivable' ? (
+                    <button className="primary-button desktop-add" onClick={() => setShowAdd(true)}>
+                      <Plus size={18} /> Add entry
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="balance-switch" role="tablist" aria-label="Choose ledger side">
@@ -875,7 +1075,10 @@ function TallyBackApp() {
                       <Avatar person={summary.person} />
                       <span className="person-copy">
                         <strong>{summary.person.name}</strong>
-                        <small>{summary.openCount} {summary.openCount === 1 ? 'entry' : 'entries'} · Latest {shortDate.format(new Date(`${summary.latestDate}T00:00:00`))}</small>
+                        <small>
+                          {summary.openCount} {summary.openCount === 1 ? 'entry' : 'entries'} · Latest {shortDate.format(new Date(`${summary.latestDate}T00:00:00`))}
+                          {summary.entries.some((entry) => pendingReviews.has(entry.id)) ? <b> · Review pending</b> : null}
+                        </small>
                       </span>
                       <span className="person-amount">
                         <strong className={direction === 'payable' ? 'amount-negative' : ''}>{money.format(summary.total)}</strong>
@@ -888,8 +1091,8 @@ function TallyBackApp() {
                     <div className="empty-state">
                       <span><UsersRound size={24} /></span>
                       <h3>{search ? 'No one found' : 'Nothing to settle here'}</h3>
-                      <p>{search ? 'Try another name.' : `Add an entry when ${direction === 'receivable' ? 'you pay for someone' : 'someone pays for you'}.`}</p>
-                      {!search && <button className="secondary-button" onClick={() => setShowAdd(true)}><Plus size={17} /> Add entry</button>}
+                      <p>{search ? 'Try another name.' : direction === 'receivable' ? 'Add an entry when you pay for someone.' : 'Entries appear here when someone records money you owe.'}</p>
+                      {!search && direction === 'receivable' ? <button className="secondary-button" onClick={() => setShowAdd(true)}><Plus size={17} /> Add entry</button> : null}
                     </div>
                   )}
                 </div>
@@ -918,7 +1121,9 @@ function TallyBackApp() {
                         </div>
                         <div className="activity-amount">
                           <strong>{money.format(entry.amount)}</strong>
-                          <span className={entry.status}>{entry.status === 'settled' ? 'Paid' : 'Open'}</span>
+                          <span className={pendingReviews.has(entry.id) ? 'review' : entry.status}>
+                            {pendingReviews.has(entry.id) ? 'Review pending' : entry.status === 'settled' ? 'Paid' : 'Open'}
+                          </span>
                         </div>
                       </article>
                     )
@@ -966,15 +1171,25 @@ function TallyBackApp() {
         </div>
       </main>
 
-      <button className="mobile-fab" onClick={() => setShowAdd(true)} aria-label="Add entry"><Plus size={23} /></button>
+      {view === 'ledger' && direction === 'receivable' ? <button className="mobile-fab" onClick={() => setShowAdd(true)} aria-label="Add entry"><Plus size={23} /></button> : null}
       <nav className="mobile-nav" aria-label="Mobile navigation">
         <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><ReceiptText size={20} /><span>Ledger</span></button>
         <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}><History size={20} /><span>Activity</span></button>
         <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}><Split size={20} /><span>Splits</span></button>
       </nav>
 
-      {showAdd && <AddEntryModal initialDirection={direction} currentUser={currentUser} onClose={() => setShowAdd(false)} onSave={saveEntry} />}
-      {selectedSummary && <PersonDrawer summary={selectedSummary} direction={direction} onClose={() => setSelectedPhone(null)} onSettle={markEntrySettled} />}
+      {showAdd && <AddEntryModal currentUser={currentUser} onClose={() => setShowAdd(false)} onSave={saveEntry} />}
+      {reviewEntry ? <ReviewRequestModal entry={reviewEntry} onClose={() => setReviewEntry(null)} onSend={(draft) => sendReviewRequest(reviewEntry, draft)} /> : null}
+      {selectedSummary && <PersonDrawer
+        summary={selectedSummary}
+        direction={direction}
+        pendingReviews={pendingReviews}
+        resolvingReviewId={resolvingReviewId}
+        onClose={() => setSelectedPhone(null)}
+        onSettle={markEntrySettled}
+        onRequestReview={setReviewEntry}
+        onResolveReview={resolveReview}
+      />}
       {toast && <div className="toast" role="status"><CheckCircle2 size={18} /> {toast}</div>}
     </div>
   )
