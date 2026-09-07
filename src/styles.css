@@ -1684,16 +1684,6 @@ a {
   to { transform: rotate(360deg); }
 }
 
-.demo-login {
-  width: 100%;
-  padding: 12px;
-  border: 0;
-  background: transparent;
-  color: var(--indigo-dark);
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .login-fine-print {
   margin: 15px auto 0;
   color: #626b7e;
@@ -1706,6 +1696,13 @@ a {
   font-size: 18px;
   font-weight: 750;
   letter-spacing: 0.36em;
+}
+
+.field-help {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 #recaptcha-container {

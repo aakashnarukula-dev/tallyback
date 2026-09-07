@@ -158,6 +158,7 @@ function LoginScreen({
   const [truecallerArmed, setTruecallerArmed] = useState(false)
   const truecallerController = useRef<AbortController | null>(null)
   const truecallerInit = useRef<TruecallerInit | null>(null)
+  const verificationAttempt = useRef('')
 
   useEffect(() => {
     if (!auth || !isFirebaseConfigured || !canAttemptAutomaticTruecaller()) return
@@ -205,38 +206,38 @@ function LoginScreen({
     })
   }
 
+  useEffect(() => {
+    if (!confirmation || code.length !== 6 || verificationAttempt.current === code) return
+
+    verificationAttempt.current = code
+    setError('')
+    setWorking(true)
+
+    confirmation.confirm(code).then(async (credential) => {
+      const existingProfile = await getUserProfile(credential.user.uid)
+      const person = {
+        name: existingProfile?.name || credential.user.displayName || 'TallyBack member',
+        phone: credential.user.phoneNumber ?? toE164(phone),
+      }
+      await saveUserProfile(credential.user.uid, person)
+      onAuthenticated(person)
+    }).catch((verificationError) => {
+      setError(authErrorMessage(verificationError))
+    }).finally(() => {
+      setWorking(false)
+    })
+  }, [code, confirmation, onAuthenticated, phone])
+
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (confirmation) return
+
     setError('')
     truecallerController.current?.abort()
     truecallerController.current = null
     truecallerInit.current = null
     setTruecallerArmed(false)
     setTruecallerWorking(false)
-
-    if (confirmation) {
-      if (code.length !== 6) {
-        setError('Enter the 6-digit code from the SMS.')
-        return
-      }
-
-      try {
-        setWorking(true)
-        const credential = await confirmation.confirm(code)
-        const existingProfile = await getUserProfile(credential.user.uid)
-        const person = {
-          name: existingProfile?.name || credential.user.displayName || 'TallyBack member',
-          phone: credential.user.phoneNumber ?? toE164(phone),
-        }
-        await saveUserProfile(credential.user.uid, person)
-        onAuthenticated(person)
-      } catch (verificationError) {
-        setError(authErrorMessage(verificationError))
-      } finally {
-        setWorking(false)
-      }
-      return
-    }
 
     if (normalizePhone(phone).length !== 10) {
       setError('Enter a valid 10-digit mobile number.')
@@ -265,12 +266,25 @@ function LoginScreen({
     }
   }
 
-  function changeNumber() {
-    setConfirmation(null)
-    setCode('')
+  function changePhone(nextPhone: string) {
+    const normalizedPhone = nextPhone.replace(/[^0-9]/g, '').slice(0, 10)
+
+    if (confirmation && normalizedPhone !== phone) {
+      setConfirmation(null)
+      setCode('')
+      verificationAttempt.current = ''
+      setError('')
+      recaptchaVerifier?.clear()
+      recaptchaVerifier = null
+    }
+
+    setPhone(normalizedPhone)
+  }
+
+  function changeCode(nextCode: string) {
+    verificationAttempt.current = ''
     setError('')
-    recaptchaVerifier?.clear()
-    recaptchaVerifier = null
+    setCode(nextCode.replace(/[^0-9]/g, '').slice(0, 6))
   }
 
   return (
@@ -328,6 +342,19 @@ function LoginScreen({
               ? `We sent a 6-digit verification code to +91 ${phone.slice(0, 5)} ${phone.slice(5)}.`
               : 'Use the mobile number your friends know. Your shared entries will be waiting for you.'}
           </p>
+          <label>
+            Mobile number
+            <div className="phone-input">
+              <span>+91</span>
+              <input
+                value={phone}
+                onChange={(event) => changePhone(event.target.value)}
+                placeholder="98765 43210"
+                inputMode="numeric"
+                autoComplete="tel"
+              />
+            </div>
+          </label>
           {truecallerWorking && !confirmation ? (
             <div className="automatic-login-status" role="status" aria-live="polite">
               <span className="automatic-login-spinner" aria-hidden="true" />
@@ -336,48 +363,40 @@ function LoginScreen({
                 <span>Confirm in Truecaller to continue.</span>
               </div>
             </div>
-          ) : confirmation ? (
+          ) : confirmation && (
             <label>
               Verification code
               <div className="input-shell verification-input">
                 <ShieldCheck size={18} />
                 <input
                   value={code}
-                  onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                  onChange={(event) => changeCode(event.target.value)}
                   placeholder="000000"
                   inputMode="numeric"
                   autoComplete="one-time-code"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  disabled={working}
+                  aria-describedby="otp-help"
                   autoFocus
                 />
               </div>
-            </label>
-          ) : (
-            <label>
-              Mobile number
-              <div className="phone-input">
-                <span>+91</span>
-                <input
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-                  placeholder="98765 43210"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                />
-              </div>
+              <span id="otp-help" className="field-help" role="status" aria-live="polite">
+                {working ? 'Verifying code…' : 'Verification starts automatically after 6 digits.'}
+              </span>
             </label>
           )}
           {error && <p className="form-error">{error}</p>}
-          {!truecallerWorking && (
+          {!truecallerWorking && !confirmation && (
             <button
               id="phone-sign-in-button"
               className="primary-button login-button"
               type="submit"
               disabled={working}
             >
-              {working ? 'Please wait…' : confirmation ? 'Verify and continue' : 'Text me a code'}
+              {working ? 'Please wait…' : 'Text me a code'}
             </button>
           )}
-          {confirmation && <button className="demo-login" type="button" onClick={changeNumber}>Use a different number</button>}
           <p className="login-fine-print">
             Truecaller verifies your number without an OTP on supported Android devices. SMS is available as a secure fallback.
           </p>
