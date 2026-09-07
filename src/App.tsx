@@ -269,10 +269,11 @@ function LoginScreen({
   return (
     <main className="login-page">
       {truecallerArmed && (
-        <div
+        <button
+          type="button"
           className="truecaller-activation-layer"
           aria-hidden="true"
-          onPointerDown={activateTruecaller}
+          tabIndex={-1}
           onClick={activateTruecaller}
         />
       )}

@@ -81,12 +81,7 @@ function rememberTruecallerDevice() {
 }
 
 function fireDeeplink(deeplink: string) {
-  const frame = document.createElement('iframe')
-  frame.setAttribute('aria-hidden', 'true')
-  frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden;'
-  frame.src = deeplink
-  document.body.appendChild(frame)
-  window.setTimeout(() => frame.remove(), 200)
+  window.location.href = deeplink
 }
 
 function apiError(code?: string) {

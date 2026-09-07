@@ -1275,7 +1275,12 @@ a {
   position: fixed;
   inset: 0;
   z-index: 1000;
+  margin: 0;
+  padding: 0;
+  border: 0;
   background: transparent;
+  appearance: none;
+  opacity: 0;
   touch-action: manipulation;
 }
 
