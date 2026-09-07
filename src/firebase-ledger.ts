@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  or,
   query,
   serverTimestamp,
   setDoc,
@@ -48,7 +49,10 @@ export function subscribeToEntries(
 ) {
   const entriesQuery = query(
     collection(requireDatabase(), 'ledgerEntries'),
-    where('participantPhones', 'array-contains', toE164(phone)),
+    or(
+      where('lenderPhone', '==', toE164(phone)),
+      where('borrowerPhone', '==', toE164(phone)),
+    ),
   )
 
   return onSnapshot(

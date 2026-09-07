@@ -118,6 +118,12 @@ export async function createFirebaseSession(phone, profile) {
   const existing = await userRef.get()
   const savedName = existing.data()?.name || name
   await userRef.set({ name: savedName, phone: phoneNumber, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
-  const customToken = await adminAuth().createCustomToken(user.uid, { loginMethod: 'truecaller' })
+  const sessionClaims = {
+    ...(user.customClaims || {}),
+    loginMethod: 'truecaller',
+    verifiedPhone: phoneNumber,
+  }
+  await adminAuth().setCustomUserClaims(user.uid, sessionClaims)
+  const customToken = await adminAuth().createCustomToken(user.uid, sessionClaims)
   return { customToken, profile: { phone, name: savedName, email: email || null } }
 }

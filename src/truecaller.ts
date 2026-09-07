@@ -191,6 +191,28 @@ export async function signInWithTruecaller({
   return null
 }
 
+export async function ensureTruecallerLedgerClaim(user: User) {
+  const tokenResult = await user.getIdTokenResult()
+  if (tokenResult.claims.loginMethod !== 'truecaller' || tokenResult.claims.verifiedPhone) return
+  if (!apiBase) throw new Error('The Truecaller session upgrade endpoint is not configured.')
+
+  const idToken = await user.getIdToken()
+  const response = await fetch(`${apiBase}/api/truecaller/upgrade`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  })
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(`Truecaller session upgrade failed: ${result.error || response.status}`)
+  }
+
+  await user.getIdToken(true)
+}
+
 if (typeof window !== 'undefined' && canAttemptAutomaticTruecaller()) {
   void prepareTruecaller()
 }

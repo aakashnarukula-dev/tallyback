@@ -7,6 +7,7 @@ vite.config.d.ts
 .env.local
 .firebase/
 firebase-debug.log
+firestore-debug.log
 .vercel
 .env*
 !.env.example

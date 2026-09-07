@@ -57,6 +57,7 @@ import {
 } from './firebase-reviews'
 import {
   canAttemptAutomaticTruecaller,
+  ensureTruecallerLedgerClaim,
   prepareTruecaller,
   signInWithTruecaller,
   TruecallerInit,
@@ -739,12 +740,14 @@ function TallyBackApp() {
       }
 
       try {
+        await ensureTruecallerLedgerClaim(firebaseUser)
         const profile = await getUserProfile(firebaseUser.uid)
         setCurrentUser(profile ?? {
           name: 'My account',
           phone: firebaseUser.phoneNumber ?? '',
         })
-      } catch {
+      } catch (error) {
+        console.error('[auth/profile]', error)
         setCurrentUser({
           name: 'My account',
           phone: firebaseUser.phoneNumber ?? '',
@@ -761,7 +764,8 @@ function TallyBackApp() {
       return
     }
 
-    if (!auth?.currentUser || !isFirebaseConfigured) return
+    const firebaseAuth = auth
+    if (!firebaseAuth?.currentUser || !isFirebaseConfigured) return
 
     setDataLoading(true)
     return subscribeToEntries(
@@ -770,7 +774,13 @@ function TallyBackApp() {
         setEntries(cloudEntries)
         setDataLoading(false)
       },
-      () => {
+      (error) => {
+        console.error('[ledger/listener]', {
+          code: (error as { code?: string }).code,
+          message: error.message,
+          phone: toE164(currentUser.phone),
+          uid: firebaseAuth.currentUser?.uid,
+        })
         setDataLoading(false)
         setToast('Could not sync your ledger. Check the Firebase setup and try again.')
       },

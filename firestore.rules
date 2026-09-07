@@ -4,35 +4,29 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedInWithPhone() {
       return request.auth != null
-        && (
-          hasTokenPhone()
-          || hasStoredPhone()
-        );
+        && tokenPhone() is string
+        && tokenPhone().size() > 0;
     }
 
-    function hasTokenPhone() {
-      return request.auth != null
-        && request.auth.token.get('phone_number', '') is string
-        && request.auth.token.get('phone_number', '').size() > 0;
-    }
-
-    function hasStoredPhone() {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('phone', '') is string
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('phone', '').size() > 0;
+    function tokenPhone() {
+      return request.auth == null
+        ? ''
+        : request.auth.token.get(
+            'phone_number',
+            request.auth.token.get('verifiedPhone', '')
+          );
     }
 
     function phone() {
-      return hasStoredPhone()
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.phone
-        : request.auth.token.get('phone_number', '');
+      return tokenPhone();
     }
 
     function isParticipant(data) {
       return signedInWithPhone()
-        && data.participantPhones is list
-        && phone() in data.participantPhones;
+        && (
+          data.lenderPhone == phone()
+          || data.borrowerPhone == phone()
+        );
     }
 
     function validPendingReview(review, entry) {
