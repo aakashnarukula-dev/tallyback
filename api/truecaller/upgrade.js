@@ -17,7 +17,10 @@ export default async function handler(req, res) {
     if (!idToken) return res.status(401).json({ error: 'missing_token' })
 
     const decoded = await adminAuth().verifyIdToken(idToken)
-    if (decoded.loginMethod !== 'truecaller') return res.status(403).json({ error: 'not_truecaller' })
+    const isCustomSession = decoded.firebase?.sign_in_provider === 'custom'
+    if (decoded.loginMethod !== 'truecaller' && !isCustomSession) {
+      return res.status(403).json({ error: 'not_truecaller' })
+    }
 
     const profile = await adminDb().collection('users').doc(decoded.uid).get()
     const verifiedPhone = String(profile.data()?.phone || '')
