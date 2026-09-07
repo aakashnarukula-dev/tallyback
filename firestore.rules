@@ -1,0 +1,230 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInWithPhone() {
+      return request.auth != null
+        && request.auth.token.phone_number is string;
+    }
+
+    function phone() {
+      return request.auth.token.phone_number;
+    }
+
+    function isParticipant(data) {
+      return signedInWithPhone()
+        && data.participantPhones is list
+        && data.participantPhones.hasAny([phone()]);
+    }
+
+    function validEntry(data) {
+      return data.keys().hasAll([
+          'lender',
+          'borrower',
+          'lenderPhone',
+          'borrowerPhone',
+          'participantPhones',
+          'amount',
+          'occasion',
+          'method',
+          'date',
+          'status',
+          'createdBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'lender',
+          'borrower',
+          'lenderPhone',
+          'borrowerPhone',
+          'participantPhones',
+          'amount',
+          'occasion',
+          'method',
+          'date',
+          'status',
+          'createdBy',
+          'createdAt',
+          'updatedAt',
+          'settledAt'
+        ])
+        && data.lender is map
+        && data.borrower is map
+        && data.lender.keys().hasOnly(['name', 'phone'])
+        && data.borrower.keys().hasOnly(['name', 'phone'])
+        && data.lender.name is string
+        && data.borrower.name is string
+        && data.lender.name.size() > 0
+        && data.borrower.name.size() > 0
+        && data.lenderPhone is string
+        && data.borrowerPhone is string
+        && data.lender.phone == data.lenderPhone
+        && data.borrower.phone == data.borrowerPhone
+        && data.lenderPhone != data.borrowerPhone
+        && data.participantPhones is list
+        && data.participantPhones.size() == 2
+        && data.participantPhones.hasAll([data.lenderPhone, data.borrowerPhone])
+        && data.amount is number
+        && data.amount > 0
+        && data.occasion is string
+        && data.occasion.size() > 0
+        && data.method in ['UPI', 'Credit card', 'Cash', 'Bank transfer', 'Personal funds']
+        && data.date is string
+        && data.status in ['open', 'settled'];
+    }
+
+    function validProfile(data) {
+      return data.keys().hasAll(['name', 'phone', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'phone', 'updatedAt'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.phone is string
+        && data.updatedAt == request.time;
+    }
+
+    function ownsSplit(splitId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/splitPages/$(splitId)).data.ownerUid == request.auth.uid;
+    }
+
+    function ownsSplitAfterWrite(splitId) {
+      return request.auth != null
+        && getAfter(/databases/$(database)/documents/splitPages/$(splitId)).data.ownerUid == request.auth.uid;
+    }
+
+    function validSplit(data) {
+      return data.keys().hasAll([
+          'title',
+          'description',
+          'active',
+          'currency',
+          'ownerUid',
+          'ownerName',
+          'recipients',
+          'totalAmount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'description',
+          'active',
+          'currency',
+          'ownerUid',
+          'ownerName',
+          'recipients',
+          'totalAmount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 100
+        && data.description is string
+        && data.description.size() <= 280
+        && data.active is bool
+        && data.currency == 'INR'
+        && data.ownerUid is string
+        && data.ownerName is string
+        && data.recipients is list
+        && data.recipients.size() > 0
+        && data.recipients.size() <= 50
+        && data.totalAmount is number
+        && data.totalAmount > 0;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if signedInWithPhone()
+        && request.auth.uid == userId
+        && request.resource.data.phone == phone()
+        && validProfile(request.resource.data);
+      allow update: if signedInWithPhone()
+        && request.auth.uid == userId
+        && resource.data.phone == phone()
+        && request.resource.data.phone == phone()
+        && validProfile(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /ledgerEntries/{entryId} {
+      allow read: if isParticipant(resource.data);
+      allow create: if validEntry(request.resource.data)
+        && isParticipant(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isParticipant(resource.data)
+        && isParticipant(request.resource.data)
+        && validEntry(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && (
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'settledAt', 'updatedAt'])
+            && resource.data.status == 'open'
+            && request.resource.data.status == 'settled'
+          )
+          ||
+          (
+            request.auth.uid == resource.data.createdBy
+            && resource.data.status == 'open'
+            && request.resource.data.status == 'open'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'lender',
+                'borrower',
+                'lenderPhone',
+                'borrowerPhone',
+                'participantPhones',
+                'amount',
+                'occasion',
+                'method',
+                'date',
+                'updatedAt'
+              ])
+          )
+        );
+      allow delete: if false;
+    }
+
+    match /splitPages/{splitId} {
+      allow read: if resource.data.active == true
+        || (request.auth != null && resource.data.ownerUid == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && validSplit(request.resource.data);
+      allow update: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && validSplit(request.resource.data);
+      allow delete: if false;
+
+      match /contacts/{contactId} {
+        allow read: if ownsSplit(splitId);
+        allow create, update, delete: if ownsSplitAfterWrite(splitId);
+      }
+
+      match /payments/{paymentId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /truecallerAuth/{nonce} {
+      allow read, write: if false;
+    }
+
+    match /rateLimits/{limitId} {
+      allow read, write: if false;
+    }
+  }
+}
