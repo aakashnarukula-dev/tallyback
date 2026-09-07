@@ -4,11 +4,22 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedInWithPhone() {
       return request.auth != null
-        && request.auth.token.phone_number is string;
+        && (
+          request.auth.token.phone_number is string
+          || hasStoredPhone()
+        );
+    }
+
+    function hasStoredPhone() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.phone is string;
     }
 
     function phone() {
-      return request.auth.token.phone_number;
+      return request.auth.token.phone_number is string
+        ? request.auth.token.phone_number
+        : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.phone;
     }
 
     function isParticipant(data) {
