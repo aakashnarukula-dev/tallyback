@@ -32,7 +32,7 @@ service cloud.firestore {
     function isParticipant(data) {
       return signedInWithPhone()
         && data.participantPhones is list
-        && data.participantPhones.hasAny([phone()]);
+        && phone() in data.participantPhones;
     }
 
     function validPendingReview(review, entry) {
