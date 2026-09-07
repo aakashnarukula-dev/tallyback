@@ -1399,46 +1399,45 @@ a {
   margin-top: 22px;
 }
 
-.truecaller-button {
-  width: 100%;
-  min-height: 46px;
+.automatic-login-status {
+  min-height: 80px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 9px;
-  margin-top: 20px;
-  border: 0;
-  border-radius: 12px;
-  background: #0087ff;
-  box-shadow: 0 8px 22px rgba(0, 135, 255, .22);
-  color: white;
+  gap: 13px;
+  margin-top: 18px;
+  padding: 15px;
+  border: 1px solid #dce2ef;
+  border-radius: 14px;
+  background: #f8faff;
+}
+
+.automatic-login-status div {
+  display: grid;
+  gap: 3px;
+}
+
+.automatic-login-status strong {
+  color: var(--ink);
   font-size: 12px;
-  font-weight: 750;
 }
 
-.truecaller-button:disabled {
-  cursor: wait;
-  opacity: .65;
+.automatic-login-status span:not(.automatic-login-spinner) {
+  color: var(--muted);
+  font-size: 10px;
 }
 
-.login-divider {
-  height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #9299a8;
-  font-size: 8px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: .06em;
+.automatic-login-spinner {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 2px solid #d9ddff;
+  border-top-color: var(--indigo);
+  border-radius: 50%;
+  animation: automatic-login-spin .8s linear infinite;
 }
 
-.login-divider::before,
-.login-divider::after {
-  content: '';
-  height: 1px;
-  flex: 1;
-  background: var(--line);
+@keyframes automatic-login-spin {
+  to { transform: rotate(360deg); }
 }
 
 .demo-login {

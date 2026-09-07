@@ -5,7 +5,7 @@ TallyBack is a lightweight shared ledger for money borrowed, lent, and split bet
 ## What it includes
 
 - Phone-number-only sign-in with Firebase SMS OTP.
-- Truecaller one-tap sign-in on supported Android browsers, with SMS as fallback.
+- Automatic Truecaller sign-in on supported Android browsers, with SMS as fallback and no separate login button.
 - **You owe me** and **I owe you** ledgers shared by the two mobile numbers on each entry.
 - Multiple entries per person with amount, occasion, payment method, date, and settlement status.
 - Split-payment owner workspace for creating a collection, adding members, copying its public link, and recording offline payments.
@@ -14,7 +14,7 @@ TallyBack is a lightweight shared ledger for money borrowed, lent, and split bet
 
 ## Architecture
 
-The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and Cloud Firestore provide identity and live data. The server-only Truecaller callback, Firebase custom-token minting, and Razorpay signature verification run in the `tallyback-api` Vercel project.
+The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and Cloud Firestore provide identity and live data. The server-only Truecaller callback, Firebase custom-token minting, and Razorpay signature verification run in the `tallyback-server` Vercel project under the Aakash Vercel account.
 
 Contact numbers are stored under each split's private `contacts` subcollection. The public split document contains only display names, share amounts, and payment status. Firestore rules scope the ledger to participants and the split editor to its owner.
 
@@ -29,7 +29,7 @@ npm run dev
 Fill the Firebase Web app values in `.env.local` and set:
 
 ```text
-VITE_API_BASE=https://tallyback-api.vercel.app
+VITE_API_BASE=https://tallyback-server.vercel.app
 ```
 
 ## Provider setup
@@ -39,8 +39,8 @@ VITE_API_BASE=https://tallyback-api.vercel.app
 Create a **Web** application in the Truecaller developer console with:
 
 - App name: `TallyBack`
-- App domain: `https://tally-back.web.app`
-- Callback URL: `https://tallyback-api.vercel.app/api/truecaller/callback`
+- App domain: `tally-back.web.app`
+- Callback URL: `https://tallyback-server.vercel.app/api/truecaller/callback`
 
 Then add the generated key to the production Vercel project:
 
@@ -64,7 +64,7 @@ vercel env add RAZORPAY_WEBHOOK_SECRET production
 Create a Razorpay webhook for `payment.captured` and `order.paid` at:
 
 ```text
-https://tallyback-api.vercel.app/api/razorpay-webhook
+https://tallyback-server.vercel.app/api/razorpay-webhook
 ```
 
 Use the same webhook secret in Razorpay and Vercel, then redeploy the API.
@@ -80,4 +80,4 @@ vercel deploy --prod
 Production URLs:
 
 - App: <https://tally-back.web.app>
-- API health: <https://tallyback-api.vercel.app/api/health>
+- API health: <https://tallyback-server.vercel.app/api/health>

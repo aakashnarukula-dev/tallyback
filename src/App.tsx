@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ConfirmationResult,
   onAuthStateChanged,
@@ -9,7 +9,6 @@ import {
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  BadgeCheck,
   Banknote,
   Bell,
   CalendarDays,
@@ -50,7 +49,7 @@ import {
   subscribeToEntries,
   toE164,
 } from './firebase-ledger'
-import { signInWithTruecaller } from './truecaller'
+import { canAttemptAutomaticTruecaller, signInWithTruecaller } from './truecaller'
 import SplitPublicPage from './SplitPublicPage'
 import SplitWorkspace from './SplitWorkspace'
 
@@ -144,10 +143,44 @@ function LoginScreen({
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
   const [truecallerWorking, setTruecallerWorking] = useState(false)
+  const truecallerController = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (!auth || !isFirebaseConfigured || !canAttemptAutomaticTruecaller()) return
+    const controller = new AbortController()
+    truecallerController.current = controller
+
+    signInWithTruecaller({
+      signal: controller.signal,
+      onLaunch: () => setTruecallerWorking(true),
+      onFallback: () => setTruecallerWorking(false),
+    }).then(async (result) => {
+      if (!result || controller.signal.aborted) return
+      const person = {
+        name: result.profile.name || result.user.displayName || 'TallyBack member',
+        phone: result.user.phoneNumber || toE164(result.profile.phone || ''),
+      }
+      await saveUserProfile(result.user.uid, person)
+      onAuthenticated(person)
+    }).catch((truecallerError) => {
+      if ((truecallerError as Error).name !== 'AbortError') {
+        console.warn('Automatic Truecaller sign-in unavailable:', truecallerError)
+      }
+      setTruecallerWorking(false)
+    })
+
+    return () => {
+      controller.abort()
+      if (truecallerController.current === controller) truecallerController.current = null
+    }
+  }, [onAuthenticated])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
+    truecallerController.current?.abort()
+    truecallerController.current = null
+    setTruecallerWorking(false)
 
     if (confirmation) {
       if (code.length !== 6) {
@@ -197,33 +230,6 @@ function LoginScreen({
       setError(authErrorMessage(signInError))
     } finally {
       setWorking(false)
-    }
-  }
-
-  async function continueWithTruecaller() {
-    setError('')
-    if (!auth || !isFirebaseConfigured) {
-      setError('Firebase connection is not ready yet.')
-      return
-    }
-    if (!/android/i.test(navigator.userAgent || '')) {
-      setError('Truecaller one-tap works on Android. Use your mobile number below on this device.')
-      return
-    }
-
-    try {
-      setTruecallerWorking(true)
-      const result = await signInWithTruecaller()
-      const person = {
-        name: result.profile.name || result.user.displayName || 'TallyBack member',
-        phone: result.user.phoneNumber || toE164(result.profile.phone || ''),
-      }
-      await saveUserProfile(result.user.uid, person)
-      onAuthenticated(person)
-    } catch (truecallerError) {
-      setError((truecallerError as Error).message || 'Truecaller sign-in could not be completed.')
-    } finally {
-      setTruecallerWorking(false)
     }
   }
 
@@ -281,21 +287,15 @@ function LoginScreen({
               ? `We sent a 6-digit verification code to +91 ${phone.slice(0, 5)} ${phone.slice(5)}.`
               : 'Use the mobile number your friends know. Your shared entries will be waiting for you.'}
           </p>
-          {!confirmation && (
-            <>
-              <button
-                className="truecaller-button"
-                type="button"
-                onClick={continueWithTruecaller}
-                disabled={truecallerWorking || working}
-              >
-                <BadgeCheck size={19} />
-                {truecallerWorking ? 'Opening Truecaller…' : 'Continue with Truecaller'}
-              </button>
-              <div className="login-divider"><span>or use SMS</span></div>
-            </>
-          )}
-          {confirmation ? (
+          {truecallerWorking && !confirmation ? (
+            <div className="automatic-login-status" role="status" aria-live="polite">
+              <span className="automatic-login-spinner" aria-hidden="true" />
+              <div>
+                <strong>Finishing secure sign-in…</strong>
+                <span>Confirm in Truecaller to continue.</span>
+              </div>
+            </div>
+          ) : confirmation ? (
             <label>
               Verification code
               <div className="input-shell verification-input">
@@ -326,14 +326,16 @@ function LoginScreen({
             </label>
           )}
           {error && <p className="form-error">{error}</p>}
-          <button
-            id="phone-sign-in-button"
-            className="primary-button login-button"
-            type="submit"
-            disabled={working}
-          >
-            {working ? 'Please wait…' : confirmation ? 'Verify and continue' : 'Text me a code'}
-          </button>
+          {!truecallerWorking && (
+            <button
+              id="phone-sign-in-button"
+              className="primary-button login-button"
+              type="submit"
+              disabled={working}
+            >
+              {working ? 'Please wait…' : confirmation ? 'Verify and continue' : 'Text me a code'}
+            </button>
+          )}
           {confirmation && <button className="demo-login" type="button" onClick={changeNumber}>Use a different number</button>}
           <p className="login-fine-print">
             Truecaller verifies your number without an OTP on supported Android devices. SMS is available as a secure fallback.
