@@ -5,21 +5,28 @@ service cloud.firestore {
     function signedInWithPhone() {
       return request.auth != null
         && (
-          request.auth.token.phone_number is string
+          hasTokenPhone()
           || hasStoredPhone()
         );
+    }
+
+    function hasTokenPhone() {
+      return request.auth != null
+        && request.auth.token.get('phone_number', '') is string
+        && request.auth.token.get('phone_number', '').size() > 0;
     }
 
     function hasStoredPhone() {
       return request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.phone is string;
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('phone', '') is string
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('phone', '').size() > 0;
     }
 
     function phone() {
-      return request.auth.token.phone_number is string
-        ? request.auth.token.phone_number
-        : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.phone;
+      return hasStoredPhone()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.phone
+        : request.auth.token.get('phone_number', '');
     }
 
     function isParticipant(data) {
