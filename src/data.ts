@@ -3,6 +3,10 @@ export type Person = {
   phone: string
 }
 
+export type SavedContact = Person & {
+  source: 'device' | 'manual'
+}
+
 export type PaymentMethod =
   | 'UPI'
   | 'Credit card'

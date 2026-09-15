@@ -78,6 +78,21 @@ try {
     throw new Error(`Expected one ledger entry, received ${snapshot.size}.`)
   }
 
+  const contactPath = `users/${uid}/contacts/7729944442`
+  await assertSucceeds(setDoc(doc(truecallerDatabase, contactPath), {
+    name: 'Aakash 2',
+    phone: otherPhone,
+    source: 'device',
+    updatedAt: serverTimestamp(),
+  }))
+  await assertSucceeds(getDocs(collection(truecallerDatabase, 'users', uid, 'contacts')))
+  await assertFails(setDoc(doc(truecallerDatabase, `users/${uid}/contacts/not-a-phone`), {
+    name: 'Invalid contact',
+    phone: '+91not-a-phone',
+    source: 'manual',
+    updatedAt: serverTimestamp(),
+  }))
+
   const attachmentEntry = {
     lender: { name: 'Aakash Work', phone },
     borrower: { name: 'Aakash 2', phone: otherPhone },
@@ -119,6 +134,13 @@ try {
   const strangerDatabase = testEnvironment
     .authenticatedContext('stranger', { verifiedPhone: '+919999999999' })
     .firestore()
+  await assertFails(getDocs(collection(strangerDatabase, 'users', uid, 'contacts')))
+  await assertFails(setDoc(doc(strangerDatabase, contactPath), {
+    name: 'Changed by stranger',
+    phone: otherPhone,
+    source: 'manual',
+    updatedAt: serverTimestamp(),
+  }))
   const strangerQuery = query(
     collection(strangerDatabase, 'ledgerEntries'),
     or(
@@ -167,7 +189,7 @@ try {
     { contentType: 'text/plain' },
   ))
 
-  console.log('Firestore and Storage rules: participant ledger access and private payment proofs passed.')
+  console.log('Firestore and Storage rules: private contact books, participant ledgers, and payment proofs passed.')
 } finally {
   await testEnvironment.cleanup()
 }

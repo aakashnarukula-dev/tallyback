@@ -11,11 +11,12 @@ import {
   ArrowUpRight,
   Banknote,
   Bell,
-  CalendarDays,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
+  Contact,
   CreditCard,
   Flag,
   History,
@@ -30,8 +31,8 @@ import {
   ShieldCheck,
   Split,
   Smartphone,
-  Sparkles,
   Trash2,
+  UserPlus,
   UsersRound,
   WalletCards,
   X,
@@ -45,6 +46,7 @@ import {
   PaymentScreenshot,
   PaymentMethod,
   Person,
+  SavedContact,
 } from './data'
 import { auth, isFirebaseConfigured } from './firebase'
 import {
@@ -55,6 +57,13 @@ import {
   subscribeToEntries,
   toE164,
 } from './firebase-ledger'
+import {
+  canPickDeviceContacts,
+  pickDeviceContacts,
+  saveContact,
+  saveContacts,
+  subscribeToContacts,
+} from './firebase-contacts'
 import {
   createReviewRequest,
   resolveReviewRequest,
@@ -85,7 +94,7 @@ type ContactSummary = {
   person: Person
   total: number
   openCount: number
-  latestDate: string
+  latestDate?: string
   entries: LedgerEntry[]
 }
 
@@ -420,17 +429,112 @@ function LoginScreen({
   )
 }
 
+function AddPersonModal({
+  onClose,
+  onSave,
+  onImport,
+  contactPickerAvailable,
+}: {
+  onClose: () => void
+  onSave: (person: Person) => Promise<void>
+  onImport: () => Promise<void>
+  contactPickerAvailable: boolean
+}) {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!name.trim() || normalizePhone(phone).length !== 10) {
+      setError('Add contact name and valid 10-digit mobile number.')
+      return
+    }
+
+    try {
+      setWorking(true)
+      setError('')
+      await onSave({ name: name.trim(), phone: toE164(phone) })
+    } catch (saveError) {
+      setError((saveError as Error).message || 'Could not save this person. Check connection and try again.')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  async function importContacts() {
+    try {
+      setWorking(true)
+      setError('')
+      await onImport()
+    } catch (importError) {
+      if ((importError as Error).name !== 'AbortError') {
+        setError((importError as Error).message || 'Could not open device contacts.')
+      }
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose() }}>
+      <section className="modal-card add-person-modal" role="dialog" aria-modal="true" aria-labelledby="add-person-title" onMouseDown={(event) => event.stopPropagation()}>
+        <span className="sheet-grabber" aria-hidden="true" />
+        <div className="modal-header">
+          <div>
+            <p className="modal-kicker">New person</p>
+            <h2 id="add-person-title">Who do you lend to?</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={working}><X size={20} /></button>
+        </div>
+
+        {contactPickerAvailable ? (
+          <button className="contact-import-card" type="button" onClick={importContacts} disabled={working}>
+            <span><Contact size={20} /></span>
+            <span><strong>Choose from contacts</strong><small>Select one or more people from your phone</small></span>
+            <ChevronRight size={18} />
+          </button>
+        ) : null}
+
+        <div className="modal-separator"><span>{contactPickerAvailable ? 'or enter manually' : 'Enter contact details'}</span></div>
+
+        <form onSubmit={submit}>
+          <div className="person-form-grid">
+            <label>
+              Contact name
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Surya" autoComplete="name" maxLength={120} autoFocus={!contactPickerAvailable} />
+            </label>
+            <label>
+              Mobile number
+              <div className="phone-input compact">
+                <span>+91</span>
+                <input value={phone} onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))} placeholder="98765 43210" inputMode="numeric" autoComplete="tel" />
+              </div>
+            </label>
+          </div>
+          {error ? <p className="form-error">{error}</p> : null}
+          <div className="modal-actions">
+            <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={working}>{working ? 'Saving…' : 'Save person'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function AddEntryModal({
   currentUser,
+  contact,
   onClose,
   onSave,
 }: {
   currentUser: Person
+  contact: Person
   onClose: () => void
   onSave: (entry: LedgerEntry) => Promise<void>
 }) {
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
   const [amount, setAmount] = useState('')
   const [occasion, setOccasion] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('UPI')
@@ -511,10 +615,6 @@ function AddEntryModal({
   async function submit(event: FormEvent) {
     event.preventDefault()
     const numericAmount = Number(amount)
-    if (!name.trim() || normalizePhone(phone).length !== 10) {
-      setError('Add a name and valid 10-digit mobile number.')
-      return
-    }
     if (!numericAmount || numericAmount <= 0 || !occasion.trim()) {
       setError('Add the amount and what it was for.')
       return
@@ -526,7 +626,6 @@ function AddEntryModal({
     }
 
     const entryId = `loan-${Date.now()}`
-    const other = { name: name.trim(), phone: normalizePhone(phone) }
     let uploadedScreenshots: PaymentScreenshot[] = []
 
     try {
@@ -545,7 +644,7 @@ function AddEntryModal({
       await onSave({
         id: entryId,
         lender: currentUser,
-        borrower: other,
+        borrower: contact,
         amount: numericAmount,
         occasion: occasion.trim(),
         method,
@@ -580,8 +679,8 @@ function AddEntryModal({
         <span className="sheet-grabber" aria-hidden="true" />
         <div className="modal-header add-entry-header">
           <div>
-            <p className="modal-kicker">New entry</p>
-            <h2 id="add-entry-title">Add money lent</h2>
+            <p className="modal-kicker">{contact.name}</p>
+            <h2 id="add-entry-title">Add due</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={saving}>
             <X size={20} />
@@ -592,27 +691,10 @@ function AddEntryModal({
           <div className="add-entry-body">
             <div className="entry-authorship-note">
               <ArrowDownLeft size={18} />
-              <div><strong>You paid</strong><span>They will see this under “I owe you”.</span></div>
+              <div><strong>You paid for {contact.name}</strong><span>This due appears in both ledgers.</span></div>
             </div>
 
             <div className="form-grid entry-form-grid">
-              <label className="entry-name-field">
-                Who owes you?
-                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" autoFocus />
-              </label>
-              <label className="entry-phone-field">
-                Mobile number
-                <div className="phone-input compact">
-                  <span>+91</span>
-                  <input
-                    value={phone}
-                    onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-                    placeholder="98765 43210"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                  />
-                </div>
-              </label>
               <label className="amount-field">
                 Amount
                 <div className="money-input">
@@ -622,6 +704,7 @@ function AddEntryModal({
                     onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
                     placeholder="0"
                     inputMode="decimal"
+                    autoFocus
                   />
                 </div>
               </label>
@@ -913,6 +996,7 @@ function PersonDrawer({
   pendingReviews,
   resolvingReviewId,
   onClose,
+  onAddDue,
   onSettle,
   onRequestReview,
   onResolveReview,
@@ -922,13 +1006,14 @@ function PersonDrawer({
   pendingReviews: Map<string, LedgerReview>
   resolvingReviewId: string | null
   onClose: () => void
+  onAddDue: (person: Person) => void
   onSettle: (id: string) => void
   onRequestReview: (entry: LedgerEntry) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
 }) {
   return (
     <div className="drawer-backdrop" onMouseDown={onClose} role="presentation">
-      <aside className="person-drawer" onMouseDown={(event) => event.stopPropagation()}>
+      <aside className="person-drawer" role="dialog" aria-modal="true" aria-labelledby="person-ledger-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="drawer-topbar">
           <button className="drawer-back" onClick={onClose} aria-label="Close details"><ChevronLeft size={20} /></button>
           <span>Details</span>
@@ -936,17 +1021,25 @@ function PersonDrawer({
         </div>
         <div className="person-hero">
           <Avatar person={summary.person} size="lg" />
-          <h2>{summary.person.name}</h2>
+          <h2 id="person-ledger-title">{summary.person.name}</h2>
           <p>{formatPhone(summary.person.phone)}</p>
           <strong className={direction === 'payable' ? 'amount-negative' : ''}>{money.format(summary.total)}</strong>
-          <span>{direction === 'receivable' ? 'owes you' : 'you owe'}</span>
+          <span>{summary.openCount ? (direction === 'receivable' ? 'owes you' : 'you owe') : 'No open dues'}</span>
+          {direction === 'receivable' ? <button className="drawer-add-due" type="button" onClick={() => onAddDue(summary.person)}><Plus size={17} /> Add due for {summary.person.name.split(' ')[0]}</button> : null}
         </div>
         <div className="drawer-divider" />
         <div className="drawer-entries">
           <div className="drawer-section-title">
-            <h3>Open entries</h3>
+            <h3>Dues in this ledger</h3>
             <span>{summary.openCount}</span>
           </div>
+          {!summary.openCount ? (
+            <div className="drawer-empty-ledger">
+              <ReceiptText size={21} />
+              <strong>No dues yet</strong>
+              <span>Add first due without entering this person again.</span>
+            </div>
+          ) : null}
           {summary.entries.filter((entry) => entry.status === 'open').map((entry) => {
             const Icon = methodIcons[entry.method]
             const review = pendingReviews.get(entry.id)
@@ -991,7 +1084,7 @@ function PersonDrawer({
           })}
         </div>
         <p className="drawer-note">
-          <ShieldCheck size={16} /> This record is visible only to you and {summary.person.name}.
+          <ShieldCheck size={16} /> This ledger is visible only to you and {summary.person.name}.
         </p>
       </aside>
     </div>
@@ -1001,17 +1094,22 @@ function PersonDrawer({
 function TallyBackApp() {
   const [currentUser, setCurrentUser] = useState<Person | null>(null)
   const [entries, setEntries] = useState<LedgerEntry[]>([])
+  const [contacts, setContacts] = useState<SavedContact[]>([])
   const [authLoading, setAuthLoading] = useState(isFirebaseConfigured)
   const [dataLoading, setDataLoading] = useState(false)
+  const [contactsLoading, setContactsLoading] = useState(false)
   const [direction, setDirection] = useState<Direction>('receivable')
   const [view, setView] = useState<View>('ledger')
   const [search, setSearch] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
+  const [showAddPerson, setShowAddPerson] = useState(false)
+  const [addDuePerson, setAddDuePerson] = useState<Person | null>(null)
+  const [importingContacts, setImportingContacts] = useState(false)
   const [reviewEntry, setReviewEntry] = useState<LedgerEntry | null>(null)
   const [resolvingReviewId, setResolvingReviewId] = useState<string | null>(null)
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [toast, setToast] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
+  const contactPickerAvailable = canPickDeviceContacts()
 
   useEffect(() => {
     if (!auth) {
@@ -1075,6 +1173,28 @@ function TallyBackApp() {
   }, [currentUser])
 
   useEffect(() => {
+    const firebaseUser = auth?.currentUser
+    if (!currentUser || !firebaseUser || !isFirebaseConfigured) {
+      setContacts([])
+      return
+    }
+
+    setContactsLoading(true)
+    return subscribeToContacts(
+      firebaseUser.uid,
+      (savedContacts) => {
+        setContacts(savedContacts)
+        setContactsLoading(false)
+      },
+      (error) => {
+        console.error('[contacts/listener]', error)
+        setContactsLoading(false)
+        setToast('Could not sync saved contacts. Refresh and try again.')
+      },
+    )
+  }, [currentUser])
+
+  useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(''), 2800)
     return () => window.clearTimeout(timer)
@@ -1083,7 +1203,8 @@ function TallyBackApp() {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setShowAdd(false)
+        setShowAddPerson(false)
+        setAddDuePerson(null)
         setReviewEntry(null)
         setSelectedPhone(null)
         setProfileOpen(false)
@@ -1094,6 +1215,12 @@ function TallyBackApp() {
   }, [])
 
   const userPhone = normalizePhone(currentUser?.phone ?? '')
+  const ledgerTotals = useMemo(() => entries.reduce((totals, entry) => {
+    if (entry.status !== 'open') return totals
+    if (normalizePhone(entry.lender.phone) === userPhone) totals.receivable += entry.amount
+    if (normalizePhone(entry.borrower.phone) === userPhone) totals.payable += entry.amount
+    return totals
+  }, { receivable: 0, payable: 0 }), [entries, userPhone])
   const relevantEntries = useMemo(() => {
     if (!currentUser) return []
     return entries.filter((entry) =>
@@ -1102,6 +1229,11 @@ function TallyBackApp() {
         : normalizePhone(entry.borrower.phone) === userPhone,
     )
   }, [currentUser, direction, entries, userPhone])
+
+  const contactsByPhone = useMemo(
+    () => new Map(contacts.map((contact) => [normalizePhone(contact.phone), contact])),
+    [contacts],
+  )
 
   const pendingReviews = useMemo(() => {
     const pending = new Map<string, LedgerReview>()
@@ -1117,16 +1249,30 @@ function TallyBackApp() {
       && pendingReviews.has(entry.id)
   )), [entries, pendingReviews, userPhone])
 
-  const summaries = useMemo(() => {
+  const allSummaries = useMemo(() => {
     const grouped = new Map<string, ContactSummary>()
+
+    if (direction === 'receivable') {
+      contacts.forEach((contact) => {
+        const key = normalizePhone(contact.phone)
+        if (!key || key === userPhone) return
+        grouped.set(key, {
+          person: contact,
+          total: 0,
+          openCount: 0,
+          entries: [],
+        })
+      })
+    }
+
     relevantEntries.forEach((entry) => {
-      const person = direction === 'receivable' ? entry.borrower : entry.lender
-      const key = normalizePhone(person.phone)
+      const entryPerson = direction === 'receivable' ? entry.borrower : entry.lender
+      const key = normalizePhone(entryPerson.phone)
+      const displayPerson = contactsByPhone.get(key) ?? entryPerson
       const existing = grouped.get(key) ?? {
-        person,
+        person: displayPerson,
         total: 0,
         openCount: 0,
-        latestDate: entry.date,
         entries: [],
       }
       existing.entries.push(entry)
@@ -1134,18 +1280,26 @@ function TallyBackApp() {
         existing.total += entry.amount
         existing.openCount += 1
       }
-      if (entry.date > existing.latestDate) existing.latestDate = entry.date
+      if (!existing.latestDate || entry.date > existing.latestDate) existing.latestDate = entry.date
       grouped.set(key, existing)
     })
     return [...grouped.values()]
-      .filter((summary) => summary.openCount > 0)
-      .filter((summary) => summary.person.name.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => b.total - a.total)
-  }, [direction, relevantEntries, search])
+      .filter((summary) => direction === 'receivable' || summary.openCount > 0)
+      .sort((a, b) => b.total - a.total || a.person.name.localeCompare(b.person.name))
+  }, [contacts, contactsByPhone, direction, relevantEntries, userPhone])
 
-  const total = summaries.reduce((sum, item) => sum + item.total, 0)
-  const openEntries = summaries.reduce((sum, item) => sum + item.openCount, 0)
-  const selectedSummary = summaries.find((item) => normalizePhone(item.person.phone) === selectedPhone)
+  const summaries = useMemo(() => {
+    const queryText = search.trim().toLowerCase()
+    if (!queryText) return allSummaries
+    return allSummaries.filter((summary) => (
+      summary.person.name.toLowerCase().includes(queryText)
+      || normalizePhone(summary.person.phone).includes(queryText.replace(/\D/g, ''))
+    ))
+  }, [allSummaries, search])
+
+  const total = allSummaries.reduce((sum, item) => sum + item.total, 0)
+  const openEntries = allSummaries.reduce((sum, item) => sum + item.openCount, 0)
+  const selectedSummary = allSummaries.find((item) => normalizePhone(item.person.phone) === selectedPhone)
 
   const methodTotals = useMemo(() => {
     const totals = new Map<PaymentMethod, number>()
@@ -1168,6 +1322,7 @@ function TallyBackApp() {
     if (auth) await signOutOfFirebase(auth)
     setCurrentUser(null)
     setEntries([])
+    setContacts([])
     setProfileOpen(false)
   }
 
@@ -1185,7 +1340,7 @@ function TallyBackApp() {
       }
       setDirection('receivable')
       setView('ledger')
-      setShowAdd(false)
+      setAddDuePerson(null)
       setToast('Entry saved. Both sides now share the same record.')
     } catch (error) {
       setToast('Could not save this entry. Please try again.')
@@ -1196,7 +1351,6 @@ function TallyBackApp() {
   async function markEntrySettled(id: string) {
     try {
       await settleFirebaseEntry(id)
-      setSelectedPhone(null)
       setToast('Marked as paid.')
     } catch {
       setToast('Could not update this entry. Please try again.')
@@ -1233,6 +1387,64 @@ function TallyBackApp() {
     setSelectedPhone(normalizePhone(entry.borrower.phone))
   }
 
+  async function addManualContact(person: Person) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser) throw new Error('Sign in required')
+    const phone = normalizePhone(person.phone)
+    if (phone === userPhone) throw new Error('You cannot add your own number.')
+
+    const savedContact: SavedContact = { ...person, phone: toE164(phone), source: 'manual' }
+    await saveContact(firebaseUser.uid, savedContact, 'manual')
+    setContacts((current) => [savedContact, ...current.filter((item) => normalizePhone(item.phone) !== phone)])
+    setShowAddPerson(false)
+    setSelectedPhone(phone)
+    setDirection('receivable')
+    setToast(`${savedContact.name} added. Add first due inside their ledger.`)
+  }
+
+  async function importDeviceContacts() {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser) throw new Error('Sign in required')
+
+    setImportingContacts(true)
+    try {
+      const picked = (await pickDeviceContacts()).filter((person) => normalizePhone(person.phone) !== userPhone)
+      if (!picked.length) throw new Error('No valid 10-digit mobile numbers selected.')
+      await saveContacts(firebaseUser.uid, picked, 'device')
+      const imported = picked.map((person) => ({ ...person, source: 'device' as const }))
+      setContacts((current) => {
+        const merged = new Map(current.map((contact) => [normalizePhone(contact.phone), contact]))
+        imported.forEach((contact) => merged.set(normalizePhone(contact.phone), contact))
+        return [...merged.values()]
+      })
+      setShowAddPerson(false)
+      if (imported.length === 1) setSelectedPhone(normalizePhone(imported[0].phone))
+      setDirection('receivable')
+      setToast(`${imported.length} ${imported.length === 1 ? 'contact' : 'contacts'} added.`)
+    } finally {
+      setImportingContacts(false)
+    }
+  }
+
+  async function chooseContacts() {
+    if (!canPickDeviceContacts()) {
+      setShowAddPerson(true)
+      return
+    }
+    try {
+      await importDeviceContacts()
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        setToast((error as Error).message || 'Could not open device contacts.')
+      }
+    }
+  }
+
+  function startAddDue(person: Person) {
+    setSelectedPhone(normalizePhone(person.phone))
+    setAddDuePerson(person)
+  }
+
   if (authLoading) {
     return (
       <main className="auth-loading" aria-label="Loading TallyBack">
@@ -1256,7 +1468,7 @@ function TallyBackApp() {
         </a>
         <nav className="side-nav" aria-label="Primary navigation">
           <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}>
-            <ReceiptText size={19} /> My ledger
+            <UsersRound size={19} /> People
           </button>
           <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}>
             <History size={19} /> Activity
@@ -1266,8 +1478,8 @@ function TallyBackApp() {
           </button>
         </nav>
         <div className="sidebar-card">
-          <Sparkles size={18} />
-          <p><strong>Keep it clear</strong>Add every payment when it happens. Everyone sees the same total.</p>
+          <Contact size={18} />
+          <p><strong>One person, one ledger</strong>Keep every due and payment proof together.</p>
         </div>
         <p className="sidebar-foot">Synced securely with Firebase</p>
       </aside>
@@ -1309,84 +1521,94 @@ function TallyBackApp() {
         <div className="workspace">
           <section className="ledger-column">
             {view === 'ledger' ? (
-              <>
-                <div className="page-heading">
+              <section className="people-workspace">
+                <header className="people-hero">
                   <div>
-                    <p>{new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</p>
-                    <h1>Hello, {currentUser.name.split(' ')[0]}.</h1>
+                    <p>Personal ledgers</p>
+                    <h1>Money lives with people.</h1>
+                    <span>Open a person. Add every due inside one shared history.</span>
                   </div>
-                  {direction === 'receivable' ? (
-                    <button className="primary-button desktop-add" onClick={() => setShowAdd(true)}>
-                      <Plus size={18} /> Add entry
-                    </button>
+                  <button
+                    className="contact-book-button"
+                    type="button"
+                    onClick={chooseContacts}
+                    disabled={importingContacts}
+                  >
+                    <span><Contact size={21} /></span>
+                    <span><strong>{importingContacts ? 'Opening contacts…' : contactPickerAvailable ? 'Choose contacts' : 'Add person'}</strong><small>{contactPickerAvailable ? 'Use names saved on your phone' : 'Enter name and mobile number'}</small></span>
+                    <ChevronRight size={18} />
+                  </button>
+                </header>
+
+                <div className="balance-switch people-balance-switch" role="tablist" aria-label="Choose ledger side">
+                  <button role="tab" aria-selected={direction === 'receivable'} className={direction === 'receivable' ? 'active receive' : ''} onClick={() => setDirection('receivable')}>
+                    <span className="switch-icon"><ArrowDownLeft size={19} /></span>
+                    <span><small>You owe me</small><strong>{money.format(ledgerTotals.receivable)}</strong></span>
+                  </button>
+                  <button role="tab" aria-selected={direction === 'payable'} className={direction === 'payable' ? 'active pay' : ''} onClick={() => setDirection('payable')}>
+                    <span className="switch-icon"><ArrowUpRight size={19} /></span>
+                    <span><small>I owe you</small><strong>{money.format(ledgerTotals.payable)}</strong></span>
+                  </button>
+                </div>
+
+                <div className="people-toolbar">
+                  <div>
+                    <h2>{direction === 'receivable' ? 'Your people' : 'People you owe'}</h2>
+                    <p>{direction === 'receivable' ? `${allSummaries.length} saved ${allSummaries.length === 1 ? 'person' : 'people'}` : `${openEntries} open ${openEntries === 1 ? 'due' : 'dues'}`}</p>
+                  </div>
+                  <div className="people-toolbar-actions">
+                    <label className="people-search">
+                      <Search size={17} />
+                      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or number" />
+                    </label>
+                    {direction === 'receivable' ? (
+                      <button className="new-person-button" type="button" onClick={() => setShowAddPerson(true)}><UserPlus size={17} /> New person</button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="contact-ledger-grid">
+                  {(dataLoading || contactsLoading) ? <div className="ledger-loading">Syncing people and dues…</div> : null}
+                  {!dataLoading && !contactsLoading && summaries.map((summary) => {
+                    const hasReview = summary.entries.some((entry) => pendingReviews.has(entry.id))
+                    return (
+                      <article className="contact-ledger-card" key={summary.person.phone}>
+                        <button className="contact-ledger-main" type="button" onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}>
+                          <Avatar person={summary.person} />
+                          <span className="contact-ledger-copy">
+                            <strong>{summary.person.name}</strong>
+                            <small>{formatPhone(summary.person.phone)}</small>
+                          </span>
+                          <span className="contact-ledger-amount">
+                            <strong className={direction === 'payable' ? 'amount-negative' : ''}>{summary.openCount ? money.format(summary.total) : 'No dues'}</strong>
+                            <small>{summary.openCount ? `${summary.openCount} open` : 'Ready when needed'}</small>
+                          </span>
+                        </button>
+                        <div className="contact-ledger-footer">
+                          <button type="button" onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}>
+                            {hasReview ? <><Flag size={14} /> Review pending</> : summary.latestDate ? `Last due ${shortDate.format(new Date(`${summary.latestDate}T00:00:00`))}` : 'Open ledger'}
+                          </button>
+                          {direction === 'receivable' ? (
+                            <button className="quick-due-button" type="button" onClick={() => startAddDue(summary.person)}><Plus size={15} /> Add due</button>
+                          ) : (
+                            <button className="open-ledger-button" type="button" onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}>View dues <ChevronRight size={14} /></button>
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
+                  {!dataLoading && !contactsLoading && summaries.length === 0 ? (
+                    <div className="people-empty-state">
+                      <span><Contact size={25} /></span>
+                      <h3>{search ? 'No matching person' : direction === 'receivable' ? 'Bring in your people' : 'Nothing to pay back'}</h3>
+                      <p>{search ? 'Search another name or mobile number.' : direction === 'receivable' ? 'Choose contacts from your phone, then keep every due inside each person’s ledger.' : 'Dues assigned to your mobile number appear here.'}</p>
+                      {!search && direction === 'receivable' ? (
+                        <button className="primary-button" type="button" onClick={chooseContacts}><Contact size={17} /> {contactPickerAvailable ? 'Choose contacts' : 'Add person'}</button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
-
-                <div className="balance-switch" role="tablist" aria-label="Choose ledger side">
-                  <button
-                    role="tab"
-                    aria-selected={direction === 'receivable'}
-                    className={direction === 'receivable' ? 'active receive' : ''}
-                    onClick={() => setDirection('receivable')}
-                  >
-                    <span className="switch-icon"><ArrowDownLeft size={19} /></span>
-                    <span><small>You owe me</small><strong>{direction === 'receivable' ? money.format(total) : 'Money lent'}</strong></span>
-                  </button>
-                  <button
-                    role="tab"
-                    aria-selected={direction === 'payable'}
-                    className={direction === 'payable' ? 'active pay' : ''}
-                    onClick={() => setDirection('payable')}
-                  >
-                    <span className="switch-icon"><ArrowUpRight size={19} /></span>
-                    <span><small>I owe you</small><strong>{direction === 'payable' ? money.format(total) : 'Money borrowed'}</strong></span>
-                  </button>
-                </div>
-
-                <div className="ledger-toolbar">
-                  <div>
-                    <h2>{direction === 'receivable' ? 'Money coming back' : 'Money to pay back'}</h2>
-                    <p>{summaries.length} {summaries.length === 1 ? 'person' : 'people'} · {openEntries} open {openEntries === 1 ? 'entry' : 'entries'}</p>
-                  </div>
-                  <label className="search-box">
-                    <Search size={17} />
-                    <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a person" />
-                  </label>
-                </div>
-
-                <div className="people-list">
-                  {dataLoading && <div className="ledger-loading">Syncing your ledger…</div>}
-                  {!dataLoading && summaries.map((summary) => (
-                    <button
-                      className="person-row"
-                      key={summary.person.phone}
-                      onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}
-                    >
-                      <Avatar person={summary.person} />
-                      <span className="person-copy">
-                        <strong>{summary.person.name}</strong>
-                        <small>
-                          {summary.openCount} {summary.openCount === 1 ? 'entry' : 'entries'} · Latest {shortDate.format(new Date(`${summary.latestDate}T00:00:00`))}
-                          {summary.entries.some((entry) => pendingReviews.has(entry.id)) ? <b> · Review pending</b> : null}
-                        </small>
-                      </span>
-                      <span className="person-amount">
-                        <strong className={direction === 'payable' ? 'amount-negative' : ''}>{money.format(summary.total)}</strong>
-                        <small>{direction === 'receivable' ? 'owes you' : 'you owe'}</small>
-                      </span>
-                      <ChevronLeft className="row-chevron" size={18} />
-                    </button>
-                  ))}
-                  {!dataLoading && summaries.length === 0 && (
-                    <div className="empty-state">
-                      <span><UsersRound size={24} /></span>
-                      <h3>{search ? 'No one found' : 'Nothing to settle here'}</h3>
-                      <p>{search ? 'Try another name.' : direction === 'receivable' ? 'Add an entry when you pay for someone.' : 'Entries appear here when someone records money you owe.'}</p>
-                      {!search && direction === 'receivable' ? <button className="secondary-button" onClick={() => setShowAdd(true)}><Plus size={17} /> Add entry</button> : null}
-                    </div>
-                  )}
-                </div>
-              </>
+              </section>
             ) : view === 'activity' ? (
               <section className="activity-view">
                 <div className="page-heading activity-heading">
@@ -1398,7 +1620,8 @@ function TallyBackApp() {
                 </div>
                 <div className="activity-list">
                   {recentEntries.map((entry) => {
-                    const person = direction === 'receivable' ? entry.borrower : entry.lender
+                    const entryPerson = direction === 'receivable' ? entry.borrower : entry.lender
+                    const person = contactsByPhone.get(normalizePhone(entryPerson.phone)) ?? entryPerson
                     const Icon = methodIcons[entry.method]
                     return (
                       <article className="activity-row" key={entry.id}>
@@ -1461,25 +1684,26 @@ function TallyBackApp() {
         </div>
       </main>
 
-      {view === 'ledger' && direction === 'receivable' ? <button className="mobile-fab" onClick={() => setShowAdd(true)} aria-label="Add entry"><Plus size={23} /></button> : null}
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><ReceiptText size={20} /><span>Ledger</span></button>
+        <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><UsersRound size={20} /><span>People</span></button>
         <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}><History size={20} /><span>Activity</span></button>
         <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}><Split size={20} /><span>Splits</span></button>
       </nav>
 
-      {showAdd && <AddEntryModal currentUser={currentUser} onClose={() => setShowAdd(false)} onSave={saveEntry} />}
-      {reviewEntry ? <ReviewRequestModal entry={reviewEntry} onClose={() => setReviewEntry(null)} onSend={(draft) => sendReviewRequest(reviewEntry, draft)} /> : null}
+      {showAddPerson ? <AddPersonModal onClose={() => setShowAddPerson(false)} onSave={addManualContact} onImport={importDeviceContacts} contactPickerAvailable={contactPickerAvailable} /> : null}
       {selectedSummary && <PersonDrawer
         summary={selectedSummary}
         direction={direction}
         pendingReviews={pendingReviews}
         resolvingReviewId={resolvingReviewId}
         onClose={() => setSelectedPhone(null)}
+        onAddDue={startAddDue}
         onSettle={markEntrySettled}
         onRequestReview={setReviewEntry}
         onResolveReview={resolveReview}
       />}
+      {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
+      {reviewEntry ? <ReviewRequestModal entry={reviewEntry} onClose={() => setReviewEntry(null)} onSend={(draft) => sendReviewRequest(reviewEntry, draft)} /> : null}
       {toast && <div className="toast" role="status"><CheckCircle2 size={18} /> {toast}</div>}
     </div>
   )
