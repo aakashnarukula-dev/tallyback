@@ -11,9 +11,15 @@ import {
   getDocs,
   or,
   query,
+  serverTimestamp,
   setDoc,
   where,
 } from 'firebase/firestore'
+import {
+  getMetadata,
+  ref as storageRef,
+  uploadString,
+} from 'firebase/storage'
 
 const projectId = 'demo-tallyback'
 const uid = 'truecaller-user'
@@ -24,6 +30,9 @@ const testEnvironment = await initializeTestEnvironment({
   projectId,
   firestore: {
     rules: await readFile(new URL('../firestore.rules', import.meta.url), 'utf8'),
+  },
+  storage: {
+    rules: await readFile(new URL('../storage.rules', import.meta.url), 'utf8'),
   },
 })
 
@@ -69,6 +78,32 @@ try {
     throw new Error(`Expected one ledger entry, received ${snapshot.size}.`)
   }
 
+  const attachmentEntry = {
+    lender: { name: 'Aakash Work', phone },
+    borrower: { name: 'Aakash 2', phone: otherPhone },
+    lenderPhone: phone,
+    borrowerPhone: otherPhone,
+    participantPhones: [phone, otherPhone],
+    amount: 250,
+    occasion: 'Payment with proof',
+    method: 'UPI',
+    date: '2026-09-15',
+    status: 'open',
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    screenshots: Array.from({ length: 5 }, (_, index) => ({
+      path: `ledgerEntries/attachment-entry/${uid}/proof-${index + 1}.png`,
+      name: `proof-${index + 1}.png`,
+      contentType: 'image/png',
+      size: 1024,
+    })),
+  }
+  await assertSucceeds(setDoc(
+    doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'),
+    attachmentEntry,
+  ))
+
   const smsDatabase = testEnvironment
     .authenticatedContext('sms-user', { phone_number: otherPhone })
     .firestore()
@@ -105,7 +140,34 @@ try {
   )
   await assertFails(getDocs(legacyQuery))
 
-  console.log('Firestore rules: Truecaller and SMS participant queries passed; a legacy claimless session was rejected.')
+  const proofPath = `ledgerEntries/saved-entry/${uid}/proof.png`
+  const truecallerStorage = testEnvironment
+    .authenticatedContext(uid, { loginMethod: 'truecaller', verifiedPhone: phone })
+    .storage('gs://demo-tallyback.firebasestorage.app')
+  await assertSucceeds(uploadString(
+    storageRef(truecallerStorage, proofPath),
+    'payment-proof',
+    'raw',
+    { contentType: 'image/png' },
+  ))
+
+  const borrowerStorage = testEnvironment
+    .authenticatedContext('sms-user', { phone_number: otherPhone })
+    .storage('gs://demo-tallyback.firebasestorage.app')
+  await assertSucceeds(getMetadata(storageRef(borrowerStorage, proofPath)))
+
+  const strangerStorage = testEnvironment
+    .authenticatedContext('stranger', { verifiedPhone: '+919999999999' })
+    .storage('gs://demo-tallyback.firebasestorage.app')
+  await assertFails(getMetadata(storageRef(strangerStorage, proofPath)))
+  await assertFails(uploadString(
+    storageRef(truecallerStorage, `ledgerEntries/saved-entry/${uid}/not-an-image.txt`),
+    'not-an-image',
+    'raw',
+    { contentType: 'text/plain' },
+  ))
+
+  console.log('Firestore and Storage rules: participant ledger access and private payment proofs passed.')
 } finally {
   await testEnvironment.cleanup()
 }

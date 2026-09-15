@@ -10,6 +10,13 @@ export type PaymentMethod =
   | 'Bank transfer'
   | 'Personal funds'
 
+export type PaymentScreenshot = {
+  path: string
+  name: string
+  contentType: string
+  size: number
+}
+
 export type LedgerEntry = {
   id: string
   lender: Person
@@ -22,6 +29,7 @@ export type LedgerEntry = {
   settledAt?: string
   createdBy?: string
   review?: LedgerReview
+  screenshots?: PaymentScreenshot[]
 }
 
 export type ReviewKind = 'amount' | 'paid'

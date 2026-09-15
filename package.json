@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:firestore-rules": "firebase emulators:exec --only firestore --project demo-tallyback \"node tests/firestore-rules.mjs\""
+    "test:firestore-rules": "firebase emulators:exec --only firestore,storage --project demo-tallyback \"node tests/firestore-rules.mjs\""
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

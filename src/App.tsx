@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ConfirmationResult,
   onAuthStateChanged,
@@ -19,7 +19,10 @@ import {
   CreditCard,
   Flag,
   History,
+  Image as ImageIcon,
+  ImagePlus,
   Landmark,
+  LoaderCircle,
   LogOut,
   Plus,
   ReceiptText,
@@ -28,6 +31,7 @@ import {
   Split,
   Smartphone,
   Sparkles,
+  Trash2,
   UsersRound,
   WalletCards,
   X,
@@ -38,6 +42,7 @@ import {
   LedgerEntry,
   LedgerReview,
   normalizePhone,
+  PaymentScreenshot,
   PaymentMethod,
   Person,
 } from './data'
@@ -55,6 +60,14 @@ import {
   resolveReviewRequest,
   ReviewDraft,
 } from './firebase-reviews'
+import {
+  acceptedScreenshotTypes,
+  deletePaymentScreenshots,
+  loadPaymentScreenshot,
+  MAX_PAYMENT_SCREENSHOTS,
+  MAX_SCREENSHOT_SIZE,
+  uploadPaymentScreenshots,
+} from './firebase-storage'
 import {
   canAttemptAutomaticTruecaller,
   ensureTruecallerLedgerClaim,
@@ -414,7 +427,7 @@ function AddEntryModal({
 }: {
   currentUser: Person
   onClose: () => void
-  onSave: (entry: LedgerEntry) => void
+  onSave: (entry: LedgerEntry) => Promise<void>
 }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -423,8 +436,79 @@ function AddEntryModal({
   const [method, setMethod] = useState<PaymentMethod>('UPI')
   const [date, setDate] = useState(today())
   const [error, setError] = useState('')
+  const [screenshots, setScreenshots] = useState<Array<{
+    id: string
+    file: File
+    previewUrl: string
+  }>>([])
+  const [saving, setSaving] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null)
+  const screenshotInput = useRef<HTMLInputElement | null>(null)
+  const previewUrls = useRef(new Set<string>())
 
-  function submit(event: FormEvent) {
+  useEffect(() => () => {
+    previewUrls.current.forEach((url) => URL.revokeObjectURL(url))
+    previewUrls.current.clear()
+  }, [])
+
+  function addScreenshots(event: ChangeEvent<HTMLInputElement>) {
+    const incoming = Array.from(event.currentTarget.files ?? [])
+    event.currentTarget.value = ''
+    if (!incoming.length) return
+
+    const remainingSlots = MAX_PAYMENT_SCREENSHOTS - screenshots.length
+    const existingFiles = new Set(
+      screenshots.map(({ file }) => `${file.name}:${file.size}:${file.lastModified}`),
+    )
+    const accepted: File[] = []
+    let validationError = ''
+
+    for (const file of incoming) {
+      const fileKey = `${file.name}:${file.size}:${file.lastModified}`
+      if (!acceptedScreenshotTypes.includes(file.type)) {
+        validationError = 'Use PNG, JPG, or WebP images.'
+        continue
+      }
+      if (file.size > MAX_SCREENSHOT_SIZE) {
+        validationError = 'Each screenshot must be smaller than 6 MB.'
+        continue
+      }
+      if (existingFiles.has(fileKey)) continue
+      existingFiles.add(fileKey)
+      accepted.push(file)
+    }
+
+    if (accepted.length > remainingSlots) {
+      validationError = `You can attach up to ${MAX_PAYMENT_SCREENSHOTS} screenshots.`
+    }
+
+    const nextScreenshots = accepted.slice(0, Math.max(remainingSlots, 0)).map((file) => {
+      const previewUrl = URL.createObjectURL(file)
+      previewUrls.current.add(previewUrl)
+      return {
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+        file,
+        previewUrl,
+      }
+    })
+
+    if (nextScreenshots.length) {
+      setScreenshots((current) => [...current, ...nextScreenshots])
+    }
+    setError(validationError)
+  }
+
+  function removeScreenshot(id: string) {
+    setScreenshots((current) => current.filter((screenshot) => {
+      if (screenshot.id !== id) return true
+      URL.revokeObjectURL(screenshot.previewUrl)
+      previewUrls.current.delete(screenshot.previewUrl)
+      return false
+    }))
+    setError('')
+  }
+
+  async function submit(event: FormEvent) {
     event.preventDefault()
     const numericAmount = Number(amount)
     if (!name.trim() || normalizePhone(phone).length !== 10) {
@@ -436,95 +520,276 @@ function AddEntryModal({
       return
     }
 
+    if (!auth?.currentUser) {
+      setError('Sign in again before saving this entry.')
+      return
+    }
+
+    const entryId = `loan-${Date.now()}`
     const other = { name: name.trim(), phone: normalizePhone(phone) }
-    onSave({
-      id: `loan-${Date.now()}`,
-      lender: currentUser,
-      borrower: other,
-      amount: numericAmount,
-      occasion: occasion.trim(),
-      method,
-      date,
-      status: 'open',
-    })
+    let uploadedScreenshots: PaymentScreenshot[] = []
+
+    try {
+      setSaving(true)
+      setError('')
+      if (screenshots.length) {
+        setUploadProgress({ completed: 0, total: screenshots.length })
+        uploadedScreenshots = await uploadPaymentScreenshots(
+          entryId,
+          auth.currentUser.uid,
+          screenshots.map(({ file }) => file),
+          (completed, total) => setUploadProgress({ completed, total }),
+        )
+      }
+
+      await onSave({
+        id: entryId,
+        lender: currentUser,
+        borrower: other,
+        amount: numericAmount,
+        occasion: occasion.trim(),
+        method,
+        date,
+        status: 'open',
+        ...(uploadedScreenshots.length ? { screenshots: uploadedScreenshots } : {}),
+      })
+    } catch {
+      if (uploadedScreenshots.length) await deletePaymentScreenshots(uploadedScreenshots)
+      setError('Could not upload or save this entry. Check your connection and try again.')
+    } finally {
+      setSaving(false)
+      setUploadProgress(null)
+    }
   }
 
+  const saveLabel = saving
+    ? uploadProgress
+      ? `Uploading ${uploadProgress.completed}/${uploadProgress.total}`
+      : 'Saving…'
+    : 'Save entry'
+
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!saving) onClose() }}>
       <section
-        className="modal-card"
+        className="modal-card add-entry-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-entry-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="modal-header">
+        <span className="sheet-grabber" aria-hidden="true" />
+        <div className="modal-header add-entry-header">
           <div>
             <p className="modal-kicker">New entry</p>
-            <h2 id="add-entry-title">Who paid?</h2>
+            <h2 id="add-entry-title">Add money lent</h2>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={saving}>
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={submit}>
-          <div className="entry-authorship-note">
-            <ArrowDownLeft size={18} />
-            <div><strong>You paid</strong><span>This entry will appear under “I owe you” for the other person.</span></div>
-          </div>
+        <form className="add-entry-form" onSubmit={submit}>
+          <div className="add-entry-body">
+            <div className="entry-authorship-note">
+              <ArrowDownLeft size={18} />
+              <div><strong>You paid</strong><span>They will see this under “I owe you”.</span></div>
+            </div>
 
-          <div className="form-grid">
-            <label>
-              Who owes you?
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" autoFocus />
-            </label>
-            <label>
-              Mobile number
-              <div className="phone-input compact">
-                <span>+91</span>
+            <div className="form-grid entry-form-grid">
+              <label className="entry-name-field">
+                Who owes you?
+                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" autoFocus />
+              </label>
+              <label className="entry-phone-field">
+                Mobile number
+                <div className="phone-input compact">
+                  <span>+91</span>
+                  <input
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+                    placeholder="98765 43210"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                  />
+                </div>
+              </label>
+              <label className="amount-field">
+                Amount
+                <div className="money-input">
+                  <span>₹</span>
+                  <input
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="0"
+                    inputMode="decimal"
+                  />
+                </div>
+              </label>
+              <label className="entry-occasion-field">
+                What was it for?
+                <input value={occasion} onChange={(event) => setOccasion(event.target.value)} placeholder="Dinner, tickets, rent…" />
+              </label>
+              <label className="entry-method-field">
+                Paid using
+                <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
+                  {methods.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="entry-date-field">
+                Date
+                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+              </label>
+            </div>
+
+            <section className="payment-upload" aria-labelledby="payment-upload-title">
+              <div className="payment-upload-heading">
+                <div>
+                  <strong id="payment-upload-title">Payment screenshots</strong>
+                  <span>Optional · up to 5 images, 6 MB each</span>
+                </div>
+                <button
+                  className="payment-upload-button"
+                  type="button"
+                  onClick={() => screenshotInput.current?.click()}
+                  disabled={saving || screenshots.length >= MAX_PAYMENT_SCREENSHOTS}
+                >
+                  <ImagePlus size={16} /> Add images
+                </button>
                 <input
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-                  placeholder="98765 43210"
-                  inputMode="numeric"
+                  ref={screenshotInput}
+                  className="visually-hidden"
+                  type="file"
+                  accept={acceptedScreenshotTypes.join(',')}
+                  multiple
+                  onChange={addScreenshots}
+                  aria-label="Upload payment screenshots"
                 />
               </div>
-            </label>
-            <label className="amount-field">
-              Amount
-              <div className="money-input">
-                <span>₹</span>
-                <input
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
-                  placeholder="0"
-                  inputMode="decimal"
-                />
-              </div>
-            </label>
-            <label>
-              What was it for?
-              <input value={occasion} onChange={(event) => setOccasion(event.target.value)} placeholder="Dinner, tickets, rent…" />
-            </label>
-            <label>
-              Paid using
-              <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
-                {methods.map((item) => <option key={item}>{item}</option>)}
-              </select>
-            </label>
-            <label>
-              Date
-              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-            </label>
+
+              {screenshots.length ? (
+                <div className="payment-preview-rail" aria-label="Selected payment screenshots">
+                  {screenshots.map((screenshot, index) => (
+                    <figure className="payment-preview-card" key={screenshot.id}>
+                      <img src={screenshot.previewUrl} alt={`Payment screenshot ${index + 1}`} />
+                      <figcaption>{index + 1}</figcaption>
+                      <button
+                        type="button"
+                        onClick={() => removeScreenshot(screenshot.id)}
+                        aria-label={`Remove ${screenshot.file.name}`}
+                        disabled={saving}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </figure>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  className="payment-upload-empty"
+                  type="button"
+                  onClick={() => screenshotInput.current?.click()}
+                  disabled={saving}
+                >
+                  <ImageIcon size={18} />
+                  <span>Add receipts or payment confirmations</span>
+                </button>
+              )}
+            </section>
+
+            {error && <p className="form-error">{error}</p>}
           </div>
-          {error && <p className="form-error">{error}</p>}
-          <div className="modal-actions">
-            <button className="secondary-button" type="button" onClick={onClose}>Cancel</button>
-            <button className="primary-button" type="submit">Save entry</button>
+          <div className="modal-actions add-entry-actions">
+            <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={saving}>
+              {saving ? <LoaderCircle className="spin" size={16} /> : null}
+              {saveLabel}
+            </button>
           </div>
         </form>
       </section>
+    </div>
+  )
+}
+
+function PaymentScreenshotGallery({ screenshots }: { screenshots: PaymentScreenshot[] }) {
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
+  const [failedPaths, setFailedPaths] = useState<string[]>([])
+  const [activeScreenshot, setActiveScreenshot] = useState<{ url: string; name: string } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const createdUrls: string[] = []
+
+    screenshots.forEach((screenshot) => {
+      loadPaymentScreenshot(screenshot).then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        createdUrls.push(url)
+        setImageUrls((current) => ({ ...current, [screenshot.path]: url }))
+      }).catch(() => {
+        if (!cancelled) setFailedPaths((current) => [...current, screenshot.path])
+      })
+    })
+
+    return () => {
+      cancelled = true
+      createdUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [screenshots])
+
+  useEffect(() => {
+    if (!activeScreenshot) return
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setActiveScreenshot(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [activeScreenshot])
+
+  return (
+    <div className="ledger-proof-block">
+      <div className="ledger-proof-heading">
+        <span><ImageIcon size={13} /> Payment proof</span>
+        <small>{screenshots.length} {screenshots.length === 1 ? 'image' : 'images'}</small>
+      </div>
+      <div className="ledger-proof-rail">
+        {screenshots.map((screenshot, index) => {
+          const imageUrl = imageUrls[screenshot.path]
+          const failed = failedPaths.includes(screenshot.path)
+          return (
+            <button
+              type="button"
+              className="ledger-proof-image"
+              key={screenshot.path}
+              onClick={() => imageUrl && setActiveScreenshot({ url: imageUrl, name: screenshot.name })}
+              disabled={!imageUrl}
+              aria-label={`View payment screenshot ${index + 1}`}
+            >
+              {imageUrl ? (
+                <img src={imageUrl} alt="" />
+              ) : failed ? (
+                <span><ImageIcon size={18} /> Unavailable</span>
+              ) : (
+                <span><LoaderCircle className="spin" size={18} /> Loading</span>
+              )}
+              <b>{index + 1}</b>
+            </button>
+          )
+        })}
+      </div>
+
+      {activeScreenshot ? (
+        <div className="screenshot-lightbox" role="presentation" onMouseDown={() => setActiveScreenshot(null)}>
+          <section role="dialog" aria-modal="true" aria-label="Payment screenshot" onMouseDown={(event) => event.stopPropagation()}>
+            <button type="button" onClick={() => setActiveScreenshot(null)} aria-label="Close screenshot">
+              <X size={20} />
+            </button>
+            <img src={activeScreenshot.url} alt={activeScreenshot.name} />
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -693,6 +958,9 @@ function PersonDrawer({
                   <p>{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
                 </div>
                 <strong>{money.format(entry.amount)}</strong>
+                {entry.screenshots?.length ? (
+                  <PaymentScreenshotGallery screenshots={entry.screenshots} />
+                ) : null}
                 {review ? (
                   <div className={`entry-review ${direction}`}>
                     <div>
@@ -919,8 +1187,9 @@ function TallyBackApp() {
       setView('ledger')
       setShowAdd(false)
       setToast('Entry saved. Both sides now share the same record.')
-    } catch {
+    } catch (error) {
       setToast('Could not save this entry. Please try again.')
+      throw error
     }
   }
 

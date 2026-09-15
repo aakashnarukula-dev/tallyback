@@ -68,8 +68,42 @@ service cloud.firestore {
         && entry.status == 'open';
     }
 
+    function validScreenshot(screenshot) {
+      return screenshot is map
+        && screenshot.keys().hasOnly(['path', 'name', 'contentType', 'size'])
+        && screenshot.path is string
+        && screenshot.path.matches(
+          '^ledgerEntries/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[A-Za-z0-9][A-Za-z0-9._-]{0,159}$'
+        )
+        && screenshot.name is string
+        && screenshot.name.size() > 0
+        && screenshot.name.size() <= 120
+        && screenshot.contentType is string
+        && screenshot.size is int
+        && screenshot.size > 0;
+    }
+
+    function validScreenshots(data) {
+      return !data.keys().hasAny(['screenshots'])
+        || (
+          data.screenshots is list
+          && data.screenshots.size() > 0
+          && data.screenshots.size() <= 5
+          && validScreenshot(data.screenshots[0])
+          && (data.screenshots.size() < 2
+            || validScreenshot(data.screenshots[1]))
+          && (data.screenshots.size() < 3
+            || validScreenshot(data.screenshots[2]))
+          && (data.screenshots.size() < 4
+            || validScreenshot(data.screenshots[3]))
+          && (data.screenshots.size() < 5
+            || validScreenshot(data.screenshots[4]))
+        );
+    }
+
     function validEntry(data) {
-      return data.keys().hasAll([
+      return validScreenshots(data)
+        && data.keys().hasAll([
           'lender',
           'borrower',
           'lenderPhone',
@@ -99,7 +133,8 @@ service cloud.firestore {
           'createdAt',
           'updatedAt',
           'settledAt',
-          'review'
+          'review',
+          'screenshots'
         ])
         && data.lender is map
         && data.borrower is map

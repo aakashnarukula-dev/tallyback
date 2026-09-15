@@ -85,6 +85,7 @@ export async function createEntry(entry: LedgerEntry, uid: string) {
     createdBy: uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    ...(entry.screenshots?.length ? { screenshots: entry.screenshots } : {}),
   })
 }
 

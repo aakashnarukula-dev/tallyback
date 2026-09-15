@@ -1,6 +1,7 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app'
 import { Auth, getAuth } from 'firebase/auth'
 import { Firestore, getFirestore } from 'firebase/firestore'
+import { FirebaseStorage, getStorage } from 'firebase/storage'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -26,5 +27,8 @@ if (isFirebaseConfigured) {
 
 export const auth: Auth | null = app ? getAuth(app) : null
 export const db: Firestore | null = app ? getFirestore(app) : null
+export const storage: FirebaseStorage | null = app && firebaseConfig.storageBucket
+  ? getStorage(app, `gs://${firebaseConfig.storageBucket}`)
+  : null
 
 if (auth) auth.useDeviceLanguage()

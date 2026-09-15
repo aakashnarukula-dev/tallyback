@@ -8,13 +8,14 @@ TallyBack is a lightweight shared ledger for money borrowed, lent, and split bet
 - Automatic Truecaller sign-in on supported Android browsers, with SMS as fallback and no separate login button.
 - **You owe me** and **I owe you** ledgers shared by the two mobile numbers on each entry.
 - Multiple entries per person with amount, occasion, payment method, date, and settlement status.
+- Up to five private payment screenshots per entry, shared only with that entry's participants.
 - Split-payment owner workspace for creating a collection, adding members, copying its public link, and recording offline payments.
 - Public `/split/:id` payment pages with live progress and Razorpay Checkout.
 - Automatic ledger entries for every split member; a successful or owner-recorded payment settles the linked entry.
 
 ## Architecture
 
-The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and Cloud Firestore provide identity and live data. The server-only Truecaller callback, Firebase custom-token minting, and Razorpay signature verification run in the `tallyback-server` Vercel project under the Aakash Vercel account.
+The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and Cloud Firestore provide identity and live data. Firebase Storage keeps payment screenshots private behind participant-only rules. The server-only Truecaller callback, Firebase custom-token minting, and Razorpay signature verification run in the `tallyback-server` Vercel project under the Aakash Vercel account.
 
 Contact numbers are stored under each split's private `contacts` subcollection. The public split document contains only display names, share amounts, and payment status. Firestore rules scope the ledger to participants and the split editor to its owner.
 
@@ -33,6 +34,8 @@ Fill the Firebase Web app values in `.env.local` and set:
 ```text
 VITE_API_BASE=https://tallyback-server.vercel.app
 ```
+
+Payment-proof previews use authenticated browser downloads. Apply `storage.cors.json` to the Firebase bucket when adding a new web origin.
 
 ## Provider setup
 
@@ -75,7 +78,7 @@ Use the same webhook secret in Razorpay and Vercel, then redeploy the API.
 
 ```bash
 npm run build
-firebase deploy --project tally-back --only firestore:rules,hosting
+firebase deploy --project tally-back --only firestore:rules,storage,hosting
 vercel deploy --prod
 ```
 

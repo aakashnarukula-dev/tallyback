@@ -1,0 +1,55 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedInWithPhone() {
+      return request.auth != null
+        && tokenPhone() is string
+        && tokenPhone().size() > 0;
+    }
+
+    function tokenPhone() {
+      return request.auth == null
+        ? ''
+        : request.auth.token.get(
+            'phone_number',
+            request.auth.token.get('verifiedPhone', '')
+          );
+    }
+
+    function isEntryParticipant(entryId) {
+      return signedInWithPhone()
+        && firestore.exists(
+          /databases/(default)/documents/ledgerEntries/$(entryId)
+        )
+        && (
+          firestore.get(
+            /databases/(default)/documents/ledgerEntries/$(entryId)
+          ).data.lenderPhone == tokenPhone()
+          || firestore.get(
+            /databases/(default)/documents/ledgerEntries/$(entryId)
+          ).data.borrowerPhone == tokenPhone()
+        );
+    }
+
+    match /ledgerEntries/{entryId}/{uploaderUid}/{fileName} {
+      allow create: if signedInWithPhone()
+        && request.auth.uid == uploaderUid
+        && fileName.matches('^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$')
+        && request.resource.size > 0
+        && request.resource.size <= 6 * 1024 * 1024
+        && request.resource.contentType in [
+          'image/jpeg',
+          'image/png',
+          'image/webp'
+        ];
+      allow read: if isEntryParticipant(entryId);
+      allow delete: if request.auth != null && request.auth.uid == uploaderUid;
+      allow update: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
