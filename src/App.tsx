@@ -7,6 +7,7 @@ import {
   signOut as signOutOfFirebase,
 } from 'firebase/auth'
 import {
+  AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
   Banknote,
@@ -51,6 +52,7 @@ import {
 import { auth, isFirebaseConfigured } from './firebase'
 import {
   createEntry as createFirebaseEntry,
+  deleteEntry as deleteFirebaseEntry,
   getUserProfile,
   saveUserProfile,
   settleEntry as settleFirebaseEntry,
@@ -990,6 +992,54 @@ function ReviewRequestModal({
   )
 }
 
+function DeleteDueModal({
+  entry,
+  onClose,
+  onDelete,
+}: {
+  entry: LedgerEntry
+  onClose: () => void
+  onDelete: (entry: LedgerEntry) => Promise<void>
+}) {
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    try {
+      setWorking(true)
+      setError('')
+      await onDelete(entry)
+    } catch {
+      setError('Could not delete this due. Check connection and try again.')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose() }}>
+      <section className="modal-card delete-due-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-due-title" aria-describedby="delete-due-description" onMouseDown={(event) => event.stopPropagation()}>
+        <span className="delete-warning-icon" aria-hidden="true"><AlertTriangle size={22} /></span>
+        <h2 id="delete-due-title">Delete this due?</h2>
+        <p id="delete-due-description">This removes it from both ledgers. This cannot be undone.</p>
+        <div className="delete-due-context">
+          <span>{entry.occasion}</span>
+          <strong>{money.format(entry.amount)}</strong>
+          <small>{entry.borrower.name} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</small>
+        </div>
+        <form onSubmit={submit}>
+          {error ? <p className="form-error">{error}</p> : null}
+          <div className="modal-actions">
+            <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Keep due</button>
+            <button className="danger-button" type="submit" disabled={working}>{working ? 'Deleting…' : 'Delete due'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function PersonDrawer({
   summary,
   direction,
@@ -997,6 +1047,7 @@ function PersonDrawer({
   resolvingReviewId,
   onClose,
   onAddDue,
+  onDeleteDue,
   onSettle,
   onRequestReview,
   onResolveReview,
@@ -1007,6 +1058,7 @@ function PersonDrawer({
   resolvingReviewId: string | null
   onClose: () => void
   onAddDue: (person: Person) => void
+  onDeleteDue: (entry: LedgerEntry) => void
   onSettle: (id: string) => void
   onRequestReview: (entry: LedgerEntry) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
@@ -1074,11 +1126,15 @@ function PersonDrawer({
                       </div>
                     ) : <small>Waiting for {entry.lender.name} to review this.</small>}
                   </div>
-                ) : direction === 'receivable' ? (
-                  <button className="entry-action" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button>
-                ) : (
-                  <button className="entry-action report" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
-                )}
+                ) : null}
+                {direction === 'receivable' ? (
+                  <div className="drawer-entry-actions">
+                    {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button> : null}
+                    <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete due</button>
+                  </div>
+                ) : !review ? (
+                  <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
+                ) : null}
               </article>
             )
           })}
@@ -1105,6 +1161,7 @@ function TallyBackApp() {
   const [addDuePerson, setAddDuePerson] = useState<Person | null>(null)
   const [importingContacts, setImportingContacts] = useState(false)
   const [reviewEntry, setReviewEntry] = useState<LedgerEntry | null>(null)
+  const [deleteEntryTarget, setDeleteEntryTarget] = useState<LedgerEntry | null>(null)
   const [resolvingReviewId, setResolvingReviewId] = useState<string | null>(null)
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [toast, setToast] = useState('')
@@ -1206,6 +1263,7 @@ function TallyBackApp() {
         setShowAddPerson(false)
         setAddDuePerson(null)
         setReviewEntry(null)
+        setDeleteEntryTarget(null)
         setSelectedPhone(null)
         setProfileOpen(false)
       }
@@ -1355,6 +1413,23 @@ function TallyBackApp() {
     } catch {
       setToast('Could not update this entry. Please try again.')
     }
+  }
+
+  async function deleteDue(entry: LedgerEntry) {
+    await deleteFirebaseEntry(entry.id)
+
+    if (entry.screenshots?.length) {
+      try {
+        await deletePaymentScreenshots(entry.screenshots)
+      } catch (error) {
+        console.warn('[ledger/delete/screenshots]', error)
+      }
+    }
+
+    setEntries((current) => current.filter((item) => item.id !== entry.id))
+    setDeleteEntryTarget(null)
+    if (reviewEntry?.id === entry.id) setReviewEntry(null)
+    setToast('Due deleted from both ledgers.')
   }
 
   async function sendReviewRequest(entry: LedgerEntry, draft: ReviewDraft) {
@@ -1698,12 +1773,14 @@ function TallyBackApp() {
         resolvingReviewId={resolvingReviewId}
         onClose={() => setSelectedPhone(null)}
         onAddDue={startAddDue}
+        onDeleteDue={setDeleteEntryTarget}
         onSettle={markEntrySettled}
         onRequestReview={setReviewEntry}
         onResolveReview={resolveReview}
       />}
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
       {reviewEntry ? <ReviewRequestModal entry={reviewEntry} onClose={() => setReviewEntry(null)} onSend={(draft) => sendReviewRequest(reviewEntry, draft)} /> : null}
+      {deleteEntryTarget ? <DeleteDueModal entry={deleteEntryTarget} onClose={() => setDeleteEntryTarget(null)} onDelete={deleteDue} /> : null}
       {toast && <div className="toast" role="status"><CheckCircle2 size={18} /> {toast}</div>}
     </div>
   )

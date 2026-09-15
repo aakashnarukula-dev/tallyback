@@ -1452,6 +1452,91 @@ a {
   margin-top: 23px;
 }
 
+.delete-due-modal {
+  width: min(430px, 100%);
+  text-align: center;
+}
+
+.delete-warning-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+  border-radius: 17px;
+  background: #fff0ed;
+  color: #b94a42;
+}
+
+.delete-due-modal h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.55px;
+}
+
+.delete-due-modal > p {
+  max-width: 330px;
+  margin: 8px auto 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.delete-due-context {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 14px;
+  margin-top: 21px;
+  padding: 14px;
+  border: 1px solid #e3e6ed;
+  border-radius: 13px;
+  background: #f8f9fc;
+  text-align: left;
+}
+
+.delete-due-context span {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delete-due-context strong {
+  color: #a63f38;
+  font-size: 11px;
+}
+
+.delete-due-context small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.danger-button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 12px;
+  background: #a63f38;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.danger-button:hover {
+  background: #91362f;
+}
+
+.danger-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
 .add-person-modal {
   width: min(500px, 100%);
 }
@@ -2190,6 +2275,35 @@ a {
 
 .drawer-entry > button.report {
   color: var(--coral);
+}
+
+.drawer-entry-actions {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drawer-entry-actions button {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.drawer-entry-actions .entry-action {
+  color: #4f65be;
+}
+
+.drawer-entry-actions .entry-delete-action {
+  margin-left: auto;
+  color: #a63f38;
 }
 
 .entry-review {

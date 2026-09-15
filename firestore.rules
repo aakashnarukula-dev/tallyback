@@ -265,6 +265,9 @@ service cloud.firestore {
 
     match /ledgerEntries/{entryId} {
       allow read: if isParticipant(resource.data);
+      allow delete: if isParticipant(resource.data)
+        && request.auth.uid == resource.data.createdBy
+        && resource.data.lenderPhone == phone();
       allow create: if validEntry(request.resource.data)
         && isParticipant(request.resource.data)
         && !request.resource.data.keys().hasAny(['review'])

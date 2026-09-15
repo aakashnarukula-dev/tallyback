@@ -10,6 +10,7 @@ TallyBack is a lightweight shared ledger for money borrowed, lent, and split bet
 - People-first contact book with Android device-contact import and manual fallback.
 - One ledger per person, with every due added inside that person instead of re-entering contact details.
 - Multiple dues per person with amount, occasion, payment method, date, and settlement status.
+- Creator-only due deletion with confirmation and payment-proof cleanup from both ledgers.
 - Up to five private payment screenshots per entry, shared only with that entry's participants.
 - Split-payment owner workspace for creating a collection, adding members, copying its public link, and recording offline payments.
 - Public `/split/:id` payment pages with live progress and Razorpay Checkout.

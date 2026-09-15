@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -95,4 +96,8 @@ export async function settleEntry(entryId: string) {
     settledAt: new Date().toISOString(),
     updatedAt: serverTimestamp(),
   })
+}
+
+export async function deleteEntry(entryId: string) {
+  await deleteDoc(doc(requireDatabase(), 'ledgerEntries', entryId))
 }

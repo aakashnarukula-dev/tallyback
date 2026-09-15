@@ -6,6 +6,7 @@ import {
 } from '@firebase/rules-unit-testing'
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -189,7 +190,10 @@ try {
     { contentType: 'text/plain' },
   ))
 
-  console.log('Firestore and Storage rules: private contact books, participant ledgers, and payment proofs passed.')
+  await assertFails(deleteDoc(doc(smsDatabase, 'ledgerEntries', 'saved-entry')))
+  await assertSucceeds(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', 'saved-entry')))
+
+  console.log('Firestore and Storage rules: private contacts, participant ledgers, creator-only deletion, and payment proofs passed.')
 } finally {
   await testEnvironment.cleanup()
 }
