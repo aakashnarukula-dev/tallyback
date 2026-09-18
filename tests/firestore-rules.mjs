@@ -193,6 +193,8 @@ try {
     source: 'manual',
     updatedAt: serverTimestamp(),
   }))
+  await assertFails(deleteDoc(doc(strangerDatabase, contactPath)))
+  await assertSucceeds(deleteDoc(doc(truecallerDatabase, contactPath)))
   const strangerQuery = query(
     collection(strangerDatabase, 'ledgerEntries'),
     or(
@@ -244,7 +246,7 @@ try {
   await assertFails(deleteDoc(doc(smsDatabase, 'ledgerEntries', 'saved-entry')))
   await assertSucceeds(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', 'saved-entry')))
 
-  console.log('Firestore and Storage rules: private contacts, unified split dues, participant ledgers, creator-only deletion, and payment proofs passed.')
+  console.log('Firestore and Storage rules: private deletable contacts, unified split dues, participant ledgers, creator-only due deletion, and payment proofs passed.')
 } finally {
   await testEnvironment.cleanup()
 }

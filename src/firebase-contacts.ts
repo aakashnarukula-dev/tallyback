@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   serverTimestamp,
@@ -89,6 +90,12 @@ export async function saveContact(uid: string, person: Person, source: SavedCont
     source,
     updatedAt: serverTimestamp(),
   })
+}
+
+export async function deleteContact(uid: string, phoneNumber: string) {
+  const phone = normalizePhone(phoneNumber)
+  if (!phone) throw new Error('Valid contact number required.')
+  await deleteDoc(doc(requireDatabase(), 'users', uid, 'contacts', phone))
 }
 
 export async function saveContacts(uid: string, people: Person[], source: SavedContact['source']) {

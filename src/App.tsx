@@ -60,6 +60,7 @@ import {
 } from './firebase-ledger'
 import {
   canPickDeviceContacts,
+  deleteContact as deleteFirebaseContact,
   pickDeviceContacts,
   saveContact,
   saveContacts,
@@ -95,7 +96,6 @@ type ContactSummary = {
   person: Person
   total: number
   openCount: number
-  latestDate?: string
   entries: LedgerEntry[]
 }
 
@@ -1039,6 +1039,49 @@ function DeleteDueModal({
   )
 }
 
+function DeleteContactModal({
+  person,
+  onClose,
+  onDelete,
+}: {
+  person: Person
+  onClose: () => void
+  onDelete: (person: Person) => Promise<void>
+}) {
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    try {
+      setWorking(true)
+      setError('')
+      await onDelete(person)
+    } catch (deleteError) {
+      setError((deleteError as Error).message || 'Could not delete this contact. Check connection and try again.')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose() }}>
+      <section className="modal-card delete-due-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-contact-title" aria-describedby="delete-contact-description" onMouseDown={(event) => event.stopPropagation()}>
+        <span className="delete-warning-icon" aria-hidden="true"><AlertTriangle size={22} /></span>
+        <h2 id="delete-contact-title">Delete {person.name}?</h2>
+        <p id="delete-contact-description">This removes the saved contact. Paid history remains in Activity. This cannot be undone.</p>
+        <form onSubmit={submit}>
+          {error ? <p className="form-error">{error}</p> : null}
+          <div className="modal-actions">
+            <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Keep contact</button>
+            <button className="danger-button" type="submit" disabled={working}>{working ? 'Deleting…' : 'Delete contact'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function PersonDrawer({
   summary,
   direction,
@@ -1046,6 +1089,7 @@ function PersonDrawer({
   resolvingReviewId,
   onClose,
   onAddDue,
+  onDeleteContact,
   onDeleteDue,
   onOpenSplit,
   onSettle,
@@ -1058,6 +1102,7 @@ function PersonDrawer({
   resolvingReviewId: string | null
   onClose: () => void
   onAddDue: (person: Person) => void
+  onDeleteContact: (person: Person) => void
   onDeleteDue: (entry: LedgerEntry) => void
   onOpenSplit: () => void
   onSettle: (id: string) => void
@@ -1074,7 +1119,7 @@ function PersonDrawer({
           <button className="drawer-back" onClick={onClose} aria-label="Close details"><ChevronLeft size={20} /></button>
           <div className="drawer-person-title">
             <Avatar person={summary.person} size="sm" />
-            <span>
+            <span className="drawer-person-copy">
               <strong id="person-ledger-title">{summary.person.name}</strong>
               <small>{formatPhone(summary.person.phone)}</small>
             </span>
@@ -1085,13 +1130,6 @@ function PersonDrawer({
             </button>
           ) : <span className="drawer-topbar-spacer" aria-hidden="true" />}
         </header>
-        <section className={`person-balance ${direction}`} aria-label="Open balance">
-          <div>
-            <span>{direction === 'receivable' ? 'They owe you' : 'You owe them'}</span>
-            <small>{summary.openCount} open {summary.openCount === 1 ? 'due' : 'dues'}</small>
-          </div>
-          <strong className={direction === 'payable' ? 'amount-negative' : ''}>{money.format(summary.total)}</strong>
-        </section>
         <div className="drawer-entries">
           <div className="drawer-section-title">
             <div>
@@ -1105,7 +1143,12 @@ function PersonDrawer({
               <ReceiptText size={21} />
               <strong>No dues yet</strong>
               <span>{direction === 'receivable' ? `Add first due for ${firstName}.` : 'New dues assigned to you appear here.'}</span>
-              {direction === 'receivable' ? <button className="secondary-button" type="button" onClick={() => onAddDue(summary.person)}><Plus size={15} /> Add due</button> : null}
+              {direction === 'receivable' ? (
+                <div className="drawer-empty-actions">
+                  <button className="secondary-button" type="button" onClick={() => onAddDue(summary.person)}><Plus size={15} /> <span>Add due</span></button>
+                  <button className="delete-contact-button" type="button" onClick={() => onDeleteContact(summary.person)}><Trash2 size={15} /> <span>Delete contact</span></button>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className="drawer-entry-list">
@@ -1180,6 +1223,7 @@ function TallyBackApp() {
   const [importingContacts, setImportingContacts] = useState(false)
   const [reviewEntry, setReviewEntry] = useState<LedgerEntry | null>(null)
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<LedgerEntry | null>(null)
+  const [deleteContactTarget, setDeleteContactTarget] = useState<Person | null>(null)
   const [resolvingReviewId, setResolvingReviewId] = useState<string | null>(null)
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [toast, setToast] = useState('')
@@ -1282,6 +1326,7 @@ function TallyBackApp() {
         setAddDuePerson(null)
         setReviewEntry(null)
         setDeleteEntryTarget(null)
+        setDeleteContactTarget(null)
         setSelectedPhone(null)
         setProfileOpen(false)
       }
@@ -1356,11 +1401,14 @@ function TallyBackApp() {
         existing.total += entry.amount
         existing.openCount += 1
       }
-      if (!existing.latestDate || entry.date > existing.latestDate) existing.latestDate = entry.date
       grouped.set(key, existing)
     })
     return [...grouped.values()]
-      .filter((summary) => direction === 'receivable' || summary.openCount > 0)
+      .filter((summary) => (
+        direction === 'receivable'
+          ? contactsByPhone.has(normalizePhone(summary.person.phone)) || summary.openCount > 0
+          : summary.openCount > 0
+      ))
       .sort((a, b) => b.total - a.total || a.person.name.localeCompare(b.person.name))
   }, [contacts, contactsByPhone, direction, relevantEntries, userPhone])
 
@@ -1441,6 +1489,24 @@ function TallyBackApp() {
     setDeleteEntryTarget(null)
     if (reviewEntry?.id === entry.id) setReviewEntry(null)
     setToast('Due deleted from both ledgers.')
+  }
+
+  async function deleteContact(person: Person) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser) throw new Error('Sign in required.')
+    const phone = normalizePhone(person.phone)
+    const hasOpenDue = entries.some((entry) => (
+      entry.status === 'open'
+      && normalizePhone(entry.lender.phone) === userPhone
+      && normalizePhone(entry.borrower.phone) === phone
+    ))
+    if (hasOpenDue) throw new Error('Settle or delete every open due before deleting this contact.')
+
+    await deleteFirebaseContact(firebaseUser.uid, phone)
+    setContacts((current) => current.filter((contact) => normalizePhone(contact.phone) !== phone))
+    setSelectedPhone(null)
+    setDeleteContactTarget(null)
+    setToast(`${person.name} deleted. Paid history remains in Activity.`)
   }
 
   async function sendReviewRequest(entry: LedgerEntry, draft: ReviewDraft) {
@@ -1613,16 +1679,6 @@ function TallyBackApp() {
                     <p>Dues</p>
                     <h1>Money lives with people.</h1>
                   </div>
-                  <button
-                    className="contact-book-button"
-                    type="button"
-                    onClick={chooseContacts}
-                    disabled={importingContacts}
-                  >
-                    <span><Contact size={21} /></span>
-                    <span><strong>{importingContacts ? 'Opening contacts…' : contactPickerAvailable ? 'Choose contacts' : 'Add person'}</strong><small>{contactPickerAvailable ? 'Use names saved on your phone' : 'Enter name and mobile number'}</small></span>
-                    <ChevronRight size={18} />
-                  </button>
                 </header>
 
                 <div className="balance-switch people-balance-switch" role="tablist" aria-label="Choose ledger side">
@@ -1652,7 +1708,6 @@ function TallyBackApp() {
                 <div className="contact-ledger-grid">
                   {(dataLoading || contactsLoading) ? <div className="ledger-loading">Syncing people and dues…</div> : null}
                   {!dataLoading && !contactsLoading && summaries.map((summary) => {
-                    const hasReview = summary.entries.some((entry) => pendingReviews.has(entry.id))
                     return (
                       <article className="contact-ledger-card" key={summary.person.phone}>
                         <button className="contact-ledger-main" type="button" onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}>
@@ -1666,16 +1721,6 @@ function TallyBackApp() {
                             <small>{summary.openCount ? `${summary.openCount} open` : 'Ready when needed'}</small>
                           </span>
                         </button>
-                        <div className="contact-ledger-footer">
-                          <button type="button" onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}>
-                            {hasReview ? <><Flag size={14} /> Review pending</> : summary.latestDate ? `Last due ${shortDate.format(new Date(`${summary.latestDate}T00:00:00`))}` : 'Open ledger'}
-                          </button>
-                          {direction === 'receivable' ? (
-                            <button className="quick-due-button" type="button" onClick={() => startAddDue(summary.person)}><Plus size={15} /> Add due</button>
-                          ) : (
-                            <button className="open-ledger-button" type="button" onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}>View dues <ChevronRight size={14} /></button>
-                          )}
-                        </div>
                       </article>
                     )
                   })}
@@ -1733,6 +1778,12 @@ function TallyBackApp() {
         </div>
       </main>
 
+      {view === 'ledger' && direction === 'receivable' ? (
+        <button className="add-person-fab" type="button" onClick={chooseContacts} disabled={importingContacts}>
+          <Contact size={18} /> <span>{importingContacts ? 'Opening contacts…' : 'Add person'}</span>
+        </button>
+      ) : null}
+
       <nav className="mobile-nav" aria-label="Mobile navigation">
         <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><ReceiptText size={20} /><span>Dues</span></button>
         <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}><Split size={20} /><span>Splits</span></button>
@@ -1747,6 +1798,7 @@ function TallyBackApp() {
         resolvingReviewId={resolvingReviewId}
         onClose={() => setSelectedPhone(null)}
         onAddDue={startAddDue}
+        onDeleteContact={setDeleteContactTarget}
         onDeleteDue={setDeleteEntryTarget}
         onOpenSplit={() => {
           setSelectedPhone(null)
@@ -1759,6 +1811,7 @@ function TallyBackApp() {
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
       {reviewEntry ? <ReviewRequestModal entry={reviewEntry} onClose={() => setReviewEntry(null)} onSend={(draft) => sendReviewRequest(reviewEntry, draft)} /> : null}
       {deleteEntryTarget ? <DeleteDueModal entry={deleteEntryTarget} onClose={() => setDeleteEntryTarget(null)} onDelete={deleteDue} /> : null}
+      {deleteContactTarget ? <DeleteContactModal person={deleteContactTarget} onClose={() => setDeleteContactTarget(null)} onDelete={deleteContact} /> : null}
       {toast && <div className="toast" role="status"><CheckCircle2 size={18} /> {toast}</div>}
     </div>
   )

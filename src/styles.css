@@ -333,6 +333,7 @@ a {
   border-radius: 50%;
   color: #40495d;
   font-weight: 750;
+  line-height: 1;
   letter-spacing: -0.3px;
 }
 
@@ -659,11 +660,7 @@ a {
 }
 
 .people-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 245px;
-  align-items: end;
-  gap: 34px;
-  margin-bottom: 27px;
+  margin-bottom: 20px;
 }
 
 .people-hero > div > p {
@@ -679,54 +676,6 @@ a {
   font-size: clamp(34px, 4vw, 48px);
   line-height: 1.02;
   letter-spacing: -2.3px;
-}
-
-.contact-book-button {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 11px;
-  padding: 13px;
-  border: 0;
-  border-radius: 16px;
-  background: var(--ink);
-  box-shadow: 0 14px 30px rgba(24, 32, 51, 0.18);
-  color: white;
-  text-align: left;
-}
-
-.contact-book-button > span:first-child {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: #7677ec;
-}
-
-.contact-book-button > span:nth-child(2) {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.contact-book-button strong {
-  font-size: 12px;
-}
-
-.contact-book-button small {
-  overflow: hidden;
-  color: #cbd0df;
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.contact-book-button:disabled {
-  cursor: wait;
-  opacity: 0.68;
 }
 
 .people-balance-switch {
@@ -871,45 +820,6 @@ a {
 }
 
 .contact-ledger-amount strong.amount-negative {
-  color: var(--coral);
-}
-
-.contact-ledger-footer {
-  min-height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 9px;
-  padding: 7px 9px 7px 16px;
-  border-top: 1px solid #edf0f5;
-  background: #fafbfe;
-}
-
-.contact-ledger-footer button {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 650;
-  text-align: left;
-}
-
-.contact-ledger-footer .quick-due-button {
-  flex: 0 0 auto;
-  padding: 7px 10px;
-  border-radius: 9px;
-  background: var(--ink);
-  color: white;
-  font-size: 9px;
-}
-
-.contact-ledger-footer .open-ledger-button {
-  flex: 0 0 auto;
   color: var(--coral);
 }
 
@@ -1949,7 +1859,7 @@ a {
   gap: 9px;
 }
 
-.drawer-person-title > span {
+.drawer-person-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1991,51 +1901,6 @@ a {
 
 .drawer-topbar-spacer {
   width: 1px;
-}
-
-.person-balance {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin: 16px 18px 0;
-  padding: 17px 18px;
-  border: 1px solid #d9dafa;
-  border-radius: 16px;
-  background: #f0f0ff;
-}
-
-.person-balance.payable {
-  border-color: #f0d4cd;
-  background: #fff3ef;
-}
-
-.person-balance > div {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.person-balance span {
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 720;
-}
-
-.person-balance small {
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.person-balance > strong {
-  overflow: hidden;
-  color: var(--indigo-dark);
-  font-size: 25px;
-  line-height: 1;
-  letter-spacing: -0.9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .drawer-entries {
@@ -2095,7 +1960,7 @@ a {
   text-align: center;
 }
 
-.drawer-empty-ledger svg {
+.drawer-empty-ledger > svg {
   margin-bottom: 10px;
   color: var(--indigo);
 }
@@ -2105,15 +1970,44 @@ a {
   font-size: 12px;
 }
 
-.drawer-empty-ledger span {
+.drawer-empty-ledger > span {
   margin-top: 4px;
   font-size: 9px;
 }
 
-.drawer-empty-ledger .secondary-button {
-  min-height: 35px;
+.drawer-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   margin-top: 15px;
+}
+
+.drawer-empty-actions .secondary-button,
+.delete-contact-button {
+  min-height: 35px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  line-height: 1;
   font-size: 10px;
+}
+
+.drawer-empty-actions .secondary-button svg,
+.delete-contact-button svg {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.delete-contact-button {
+  border: 1px solid #f0d0ca;
+  border-radius: 12px;
+  background: var(--coral-soft);
+  color: var(--coral);
+  font-weight: 700;
 }
 
 .drawer-entry {
@@ -2308,9 +2202,34 @@ a {
   animation: toast-in 220ms ease-out;
 }
 
-.mobile-nav,
-.mobile-fab {
+.mobile-nav {
   display: none;
+}
+
+.add-person-fab {
+  position: fixed;
+  left: calc(50% + 116px);
+  bottom: 24px;
+  z-index: 39;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--ink);
+  box-shadow: 0 12px 30px rgba(24, 32, 51, 0.24);
+  color: white;
+  font-size: 11px;
+  font-weight: 720;
+  transform: translateX(-50%);
+}
+
+.add-person-fab:disabled {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .login-page {
@@ -2584,6 +2503,10 @@ a {
   .app-shell {
     grid-template-columns: 205px minmax(0, 1fr);
   }
+
+  .add-person-fab {
+    left: calc(50% + 102px);
+  }
 }
 
 @media (max-width: 860px) {
@@ -2627,8 +2550,7 @@ a {
   }
 
   .people-hero {
-    grid-template-columns: minmax(0, 1fr) 230px;
-    gap: 22px;
+    margin-bottom: 18px;
   }
 
   .mobile-nav {
@@ -2660,21 +2582,10 @@ a {
     color: var(--indigo);
   }
 
-  .mobile-fab {
-    position: fixed;
-    right: 22px;
-    bottom: 87px;
-    z-index: 39;
-    width: 52px;
-    height: 52px;
-    display: grid;
-    place-items: center;
-    padding: 0;
+  .add-person-fab {
+    left: 50%;
+    bottom: calc(84px + env(safe-area-inset-bottom));
     border: 4px solid var(--cloud);
-    border-radius: 17px;
-    background: var(--ink);
-    box-shadow: 0 10px 30px rgba(24, 32, 51, 0.25);
-    color: white;
   }
 
   .desktop-add {
@@ -2734,10 +2645,6 @@ a {
     letter-spacing: -1.7px;
   }
 
-  .contact-book-button {
-    width: 100%;
-  }
-
   .people-balance-switch button {
     padding: 11px 9px;
   }
@@ -2778,10 +2685,6 @@ a {
 
   .contact-ledger-amount strong {
     font-size: 16px;
-  }
-
-  .contact-ledger-footer {
-    padding-left: 15px;
   }
 
   .people-empty-state {
@@ -3015,15 +2918,6 @@ a {
 
   .drawer-quick-add {
     padding: 0 10px;
-  }
-
-  .person-balance {
-    margin: 13px 14px 0;
-    padding: 15px;
-  }
-
-  .person-balance > strong {
-    font-size: 23px;
   }
 
   .drawer-entries {
