@@ -629,7 +629,7 @@ function AddPersonModal({
               Mobile number
               <div className="phone-input compact">
                 <span>+91</span>
-                <input value={phone} onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))} placeholder="98765 43210" inputMode="numeric" autoComplete="tel" />
+                <input value={phone} onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))} placeholder="9876543210" inputMode="numeric" autoComplete="tel" />
               </div>
             </label>
           </div>
@@ -1885,11 +1885,11 @@ function TallyBackApp() {
                 <div className="people-toolbar">
                   <div className="people-toolbar-summary">
                     <div>
-                      <h2>{direction === 'receivable' ? 'Dues by person' : 'Your dues'}</h2>
+                      <h2>{direction === 'receivable' ? 'People who owe you' : 'People you owe'}</h2>
                       <p>{direction === 'receivable' ? `${allSummaries.length} saved ${allSummaries.length === 1 ? 'person' : 'people'}` : `${openEntries} open ${openEntries === 1 ? 'due' : 'dues'}`}</p>
                     </div>
                     <div className={`people-toolbar-total ${direction}`}>
-                      <span>Amount</span>
+                      <span>{direction === 'receivable' ? 'Total to receive' : 'Total due'}</span>
                       <strong>{money.format(direction === 'receivable' ? ledgerTotals.receivable : ledgerTotals.payable)}</strong>
                     </div>
                   </div>

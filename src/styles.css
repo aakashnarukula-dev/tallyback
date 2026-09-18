@@ -1345,6 +1345,15 @@ a {
   margin: 10px 0 18px;
 }
 
+.add-person-modal .modal-actions {
+  width: 100%;
+}
+
+.add-person-modal .modal-actions button {
+  min-width: 0;
+  flex: 1;
+}
+
 .contact-import-card {
   width: 100%;
   display: grid;
