@@ -1409,9 +1409,11 @@ function PersonDrawer({
           </div>
           {direction === 'receivable' ? (
             <div className="drawer-topbar-actions">
-              <button className="drawer-quick-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
-                <Plus size={16} /> Add due
-              </button>
+              {summary.openCount ? (
+                <button className="drawer-quick-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
+                  <Plus size={16} /> Add due
+                </button>
+              ) : null}
               {!summary.openCount ? (
                 <button
                   className="drawer-delete-contact"
@@ -1437,7 +1439,11 @@ function PersonDrawer({
           {!summary.openCount ? (
             <div className="drawer-empty-ledger">
               <ReceiptText size={21} />
-              <strong>No dues yet</strong>
+              {direction === 'receivable' ? (
+                <button className="drawer-quick-add drawer-empty-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
+                  <Plus size={16} /> Add due
+                </button>
+              ) : <strong>No dues yet</strong>}
               <span>{direction === 'receivable' ? `Add first due for ${firstName}.` : 'New dues assigned to you appear here.'}</span>
             </div>
           ) : null}

@@ -2127,6 +2127,10 @@ a {
   font-size: 12px;
 }
 
+.drawer-empty-add {
+  min-width: 96px;
+}
+
 .drawer-empty-ledger > span {
   margin-top: 4px;
   font-size: 9px;
