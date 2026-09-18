@@ -2045,7 +2045,7 @@ function TallyBackApp() {
         </div>
       </main>
 
-      {view === 'ledger' && direction === 'receivable' ? (
+      {view === 'ledger' && direction === 'receivable' && !dataLoading && !contactsLoading && allSummaries.length > 0 ? (
         <button className="add-person-fab" type="button" onClick={chooseContacts} disabled={importingContacts}>
           <Contact size={18} /> <span>{importingContacts ? 'Opening contacts…' : 'Add person'}</span>
         </button>
