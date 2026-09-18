@@ -21,8 +21,7 @@
   margin-inline: auto;
 }
 
-.split-list-panel,
-.split-editor {
+.split-list-panel {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--paper);
@@ -126,9 +125,20 @@
 }
 
 .split-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
   min-width: 0;
-  padding: 16px;
+  min-height: 100dvh;
+  padding: 0 0 max(40px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--cloud);
   animation: split-editor-in 220ms ease-out;
+}
+
+body:has(.split-editor) {
+  overflow: hidden;
 }
 
 .split-launcher {
@@ -178,35 +188,79 @@
   gap: 14px;
 }
 
-.split-editor-bar > div:first-child {
+.split-editor-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  min-height: 76px;
+  padding: 10px max(20px, calc((100vw - 900px) / 2));
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(14px);
+}
+
+.split-editor-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.split-editor-title > span {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
-.split-editor-bar > div:first-child strong {
+.split-editor-title small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.split-editor-title strong {
   overflow: hidden;
-  font-size: 16px;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.split-editor-bar > div:last-child {
-  display: flex;
-  gap: 8px;
+.split-editor-back {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--paper);
 }
 
-.split-editor-bar a {
+.split-save-button {
+  min-height: 42px;
+}
+
+.split-editor-secondary-actions {
+  width: min(860px, calc(100% - 32px));
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 18px auto 0;
+}
+
+.split-editor-secondary-actions a {
   text-decoration: none;
 }
 
 .split-form-card {
-  margin-top: 14px;
-  padding: 14px 0 0;
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
+  width: min(860px, calc(100% - 32px));
+  margin: 18px auto 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
 }
 
 .split-basics-card {
@@ -439,10 +493,11 @@
 }
 
 .split-link-note {
+  width: min(860px, calc(100% - 32px));
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 13px 2px 0;
+  margin: 13px auto 0;
   color: var(--muted);
   font-size: 9px;
 }
@@ -751,11 +806,6 @@
     width: 100%;
   }
 
-  .split-editor-bar > div:last-child {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
   .split-basics-card {
     grid-template-columns: 1fr;
   }
@@ -766,12 +816,41 @@
 }
 
 @media (max-width: 520px) {
-  .split-editor {
-    padding: 14px;
+  .split-editor-bar {
+    min-height: 68px;
+    padding: 9px 14px;
+  }
+
+  .split-editor-title {
+    gap: 9px;
+  }
+
+  .split-editor-title small {
+    display: none;
+  }
+
+  .split-editor-title strong {
+    max-width: 155px;
+    font-size: 13px;
+  }
+
+  .split-editor-back {
+    width: 40px;
+    height: 40px;
+  }
+
+  .split-save-button {
+    min-width: 92px;
+  }
+
+  .split-editor-secondary-actions,
+  .split-form-card,
+  .split-link-note {
+    width: calc(100% - 28px);
   }
 
   .split-form-card {
-    padding-top: 12px;
+    padding: 15px;
   }
 
   .split-members-heading {

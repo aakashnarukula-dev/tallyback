@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
+  ArrowLeft,
   Check,
   CheckCircle2,
   Copy,
@@ -99,6 +100,13 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     setDraft(blankDraft())
   }
 
+  function closeEditor() {
+    setCreating(false)
+    setSelectedId('')
+    setContacts({})
+    setDraft(blankDraft())
+  }
+
   function updateRecipient(id: string, key: 'name' | 'phone' | 'amount', value: string) {
     setDraft((current) => ({
       ...current,
@@ -172,15 +180,20 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
           <div className="split-launcher"><p>Loading splits…</p></div>
         ) : creating || selectedId ? (
         <form className="split-editor" onSubmit={save}>
-          <div className="split-editor-bar">
-            <div><strong>{draft.title || 'Untitled split'}</strong></div>
-            <div>
-              {selectedId ? <button className="secondary-button" type="button" onClick={copyLink}><Copy size={15} /> Copy link</button> : null}
-              {selectedId && <a className="secondary-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Preview</a>}
-              {creating ? <button className="secondary-button" type="button" onClick={() => { setCreating(false); setDraft(blankDraft()) }}>Cancel</button> : null}
-              <button className="primary-button" type="submit" disabled={saving}><Save size={15} /> {saving ? 'Saving…' : 'Save'}</button>
+          <header className="split-editor-bar">
+            <div className="split-editor-title">
+              <button className="split-editor-back" type="button" onClick={closeEditor} aria-label="Close split editor"><ArrowLeft size={20} /></button>
+              <span><small>{creating ? 'New split' : 'Edit split'}</small><strong>{draft.title || 'Untitled split'}</strong></span>
             </div>
-          </div>
+            <button className="primary-button split-save-button" type="submit" disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save'}</button>
+          </header>
+
+          {selectedId ? (
+            <div className="split-editor-secondary-actions">
+              <button className="secondary-button" type="button" onClick={copyLink}><Copy size={15} /> Copy link</button>
+              <a className="secondary-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Preview</a>
+            </div>
+          ) : null}
 
           <div className="split-form-card split-basics-card">
             <label>Split title<input required value={draft.title} maxLength={100} placeholder="Goa trip" onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
@@ -202,7 +215,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
               {draft.recipients.map((row) => (
                 <div className="split-member-row" key={row.id}>
                   <input aria-label="Member name" required value={row.name} placeholder="Surya" onChange={(event) => updateRecipient(row.id, 'name', event.target.value)} />
-                  <div className="split-member-phone"><span>+91</span><input aria-label="Member mobile number" required inputMode="numeric" value={row.phone.replace(/^\+91/, '')} placeholder="98765 43210" onChange={(event) => updateRecipient(row.id, 'phone', event.target.value.replace(/\D/g, '').slice(-10))} /></div>
+                  <div className="split-member-phone"><span>+91</span><input aria-label="Member mobile number" required inputMode="numeric" value={row.phone.replace(/^\+91/, '')} placeholder="9876543210" onChange={(event) => updateRecipient(row.id, 'phone', event.target.value.replace(/\D/g, '').slice(-10))} /></div>
                   <div className="split-member-amount"><span>₹</span><input aria-label="Share amount" required type="number" min="1" max="100000" step="0.01" value={row.amount || ''} placeholder="0" onChange={(event) => updateRecipient(row.id, 'amount', event.target.value)} /></div>
                   <div className="split-member-actions">
                     {row.status === 'paid'
