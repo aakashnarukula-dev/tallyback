@@ -2366,7 +2366,7 @@ function TallyBackApp() {
                       ) : direction === 'payable' ? (
                         <>
                           <h3>Nothing to pay back</h3>
-                          <p>Dues assigned to your mobile number appear here.</p>
+                          <p>If you owe anyone, it will appear here.</p>
                         </>
                       ) : null}
                       {!search && direction === 'receivable' ? (
