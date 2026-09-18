@@ -1651,15 +1651,7 @@ function TallyBackApp() {
     setAddDuePerson(person)
   }
 
-  if (authLoading) {
-    return (
-      <main className="auth-loading" aria-label="Loading TallyBack">
-        <BrandMark />
-        <strong>TallyBack</strong>
-        <span>Opening your ledger…</span>
-      </main>
-    )
-  }
+  if (authLoading) return null
 
   if (!currentUser) {
     return <LoginScreen onAuthenticated={loginToFirebase} />

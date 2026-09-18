@@ -2473,31 +2473,6 @@ a {
   min-height: 1px;
 }
 
-.auth-loading {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  background: var(--cloud);
-}
-
-.auth-loading .brand-mark {
-  margin-bottom: 5px;
-  animation: loading-pulse 1.1s ease-in-out infinite alternate;
-}
-
-.auth-loading strong {
-  font-size: 19px;
-  letter-spacing: -0.6px;
-}
-
-.auth-loading > span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 @keyframes backdrop-in {
   from { opacity: 0; }
 }
@@ -2512,10 +2487,6 @@ a {
 
 @keyframes toast-in {
   from { opacity: 0; transform: translate(-50%, 8px); }
-}
-
-@keyframes loading-pulse {
-  to { opacity: 0.55; transform: scale(0.94); }
 }
 
 @media (max-width: 1040px) {
