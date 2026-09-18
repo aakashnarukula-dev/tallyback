@@ -799,7 +799,6 @@ function AddEntryModal({
         <span className="sheet-grabber" aria-hidden="true" />
         <div className="modal-header add-entry-header">
           <div>
-            <p className="modal-kicker">{contact.name}</p>
             <h2 id="add-entry-title">Add due</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={saving}>
@@ -809,11 +808,6 @@ function AddEntryModal({
 
         <form className="add-entry-form" onSubmit={submit}>
           <div className="add-entry-body">
-            <div className="entry-authorship-note">
-              <ArrowDownLeft size={18} />
-              <div><strong>You paid for {contact.name}</strong><span>This due appears in both ledgers.</span></div>
-            </div>
-
             <div className="form-grid entry-form-grid">
               <label className="amount-field">
                 Amount
