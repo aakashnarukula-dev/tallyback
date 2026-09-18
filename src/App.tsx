@@ -1272,6 +1272,7 @@ function TallyBackApp() {
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [toast, setToast] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
   const contactPickerAvailable = canPickDeviceContacts()
 
   useEffect(() => {
@@ -1362,6 +1363,15 @@ function TallyBackApp() {
     const timer = window.setTimeout(() => setToast(''), 2800)
     return () => window.clearTimeout(timer)
   }, [toast])
+
+  useEffect(() => {
+    if (!profileOpen) return
+    const closeOutsideProfile = (event: PointerEvent) => {
+      if (!profileMenuRef.current?.contains(event.target as Node)) setProfileOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutsideProfile)
+    return () => document.removeEventListener('pointerdown', closeOutsideProfile)
+  }, [profileOpen])
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1693,7 +1703,7 @@ function TallyBackApp() {
               <Bell size={19} />
               {incomingReviewEntries.length ? <span /> : null}
             </button>
-            <div className="profile-wrap">
+            <div className="profile-wrap" ref={profileMenuRef}>
               <button
                 className="profile-button"
                 onClick={() => setProfileOpen((open) => !open)}
