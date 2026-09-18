@@ -33,7 +33,6 @@ import {
   Split,
   Smartphone,
   Trash2,
-  UserPlus,
   UsersRound,
   WalletCards,
   X,
@@ -1640,9 +1639,6 @@ function TallyBackApp() {
                       <Search size={17} />
                       <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or number" />
                     </label>
-                    {direction === 'receivable' ? (
-                      <button className="new-person-button" type="button" onClick={() => setShowAddPerson(true)}><UserPlus size={17} /> New person</button>
-                    ) : null}
                   </div>
                 </div>
 
