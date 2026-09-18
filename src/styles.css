@@ -331,10 +331,14 @@ a {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 50%;
-  color: #40495d;
-  font-weight: 750;
-  line-height: 1;
-  letter-spacing: -0.3px;
+  overflow: hidden;
+  background: #e8edff;
+}
+
+.avatar svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .avatar-sm {

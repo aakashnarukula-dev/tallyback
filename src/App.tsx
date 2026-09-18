@@ -37,9 +37,7 @@ import {
   X,
 } from 'lucide-react'
 import {
-  avatarColor,
   getSplitLedgerReference,
-  initials,
   LedgerEntry,
   LedgerReview,
   normalizePhone,
@@ -129,14 +127,60 @@ const methods: PaymentMethod[] = [
 
 const today = () => new Date().toISOString().slice(0, 10)
 
+const avatarPalettes = [
+  { background: '#dfe7ff', shirt: '#5963d9', hair: '#29324b', skin: '#f4c7a1' },
+  { background: '#ffe8bd', shirt: '#d66a55', hair: '#52372c', skin: '#d99b72' },
+  { background: '#d9f3e7', shirt: '#33816d', hair: '#252b36', skin: '#8f5c42' },
+  { background: '#f2ddf6', shirt: '#8856a7', hair: '#683c2e', skin: '#f0b98f' },
+  { background: '#dff2f7', shirt: '#287a96', hair: '#1f2937', skin: '#c9825d' },
+  { background: '#f7dfdf', shirt: '#b94c64', hair: '#47352f', skin: '#6f422f' },
+]
+
+function avatarSeed(person: Person) {
+  const source = normalizePhone(person.phone) || person.name
+  let value = 2166136261
+  for (const character of source) {
+    value ^= character.charCodeAt(0)
+    value = Math.imul(value, 16777619)
+  }
+  return value >>> 0
+}
+
+function CartoonAvatar({ person }: { person: Person }) {
+  const seed = avatarSeed(person)
+  const palette = avatarPalettes[seed % avatarPalettes.length]
+  const hairStyle = seed % 4
+  const wearsGlasses = seed % 3 === 0
+  const smiles = seed % 2 === 0
+
+  return (
+    <svg viewBox="0 0 64 64" focusable="false">
+      <rect width="64" height="64" rx="32" fill={palette.background} />
+      <path d="M10 64c1-13 9-20 22-20s21 7 22 20" fill={palette.shirt} />
+      <circle cx="15.5" cy="29" r="5" fill={palette.skin} />
+      <circle cx="48.5" cy="29" r="5" fill={palette.skin} />
+      <path d="M17 27c0-12 6-19 15-19s15 7 15 19v7c0 10-6 17-15 17s-15-7-15-17Z" fill={palette.skin} />
+      {hairStyle === 0 ? <path d="M16 29c0-14 7-22 17-22 8 0 14 5 16 14-5-1-9-4-12-8-4 6-11 10-21 11Z" fill={palette.hair} /> : null}
+      {hairStyle === 1 ? <path d="M16 30c-1-13 5-23 17-23 11 0 16 8 16 20-4-6-7-9-13-12-3 6-10 10-20 11Z" fill={palette.hair} /> : null}
+      {hairStyle === 2 ? <><circle cx="43" cy="10" r="7" fill={palette.hair} /><path d="M16 28c0-13 7-21 17-21 8 0 13 5 16 14-8 0-14-3-18-8-3 5-8 9-15 11Z" fill={palette.hair} /></> : null}
+      {hairStyle === 3 ? <path d="M15 29c0-15 6-22 17-22 12 0 18 8 17 23l-4-2c-1-8-5-12-13-14-3 6-8 10-17 12Z" fill={palette.hair} /> : null}
+      <circle cx="26" cy="30" r="1.7" fill="#252b36" />
+      <circle cx="38" cy="30" r="1.7" fill="#252b36" />
+      <circle cx="22" cy="36" r="2" fill="#e99387" opacity="0.5" />
+      <circle cx="42" cy="36" r="2" fill="#e99387" opacity="0.5" />
+      {wearsGlasses ? <g fill="none" stroke="#48536b" strokeWidth="1.5"><circle cx="25" cy="30" r="5" /><circle cx="39" cy="30" r="5" /><path d="M30 30h4" /></g> : null}
+      <path d={smiles ? 'M27 39c2.6 3 7.4 3 10 0' : 'M28 40c2.4-1.5 5.6-1.5 8 0'} fill="none" stroke="#7c4038" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function Avatar({ person, size = 'md' }: { person: Person; size?: 'sm' | 'md' | 'lg' }) {
   return (
     <span
       className={`avatar avatar-${size}`}
-      style={{ backgroundColor: avatarColor(person.phone) }}
       aria-hidden="true"
     >
-      {initials(person.name)}
+      <CartoonAvatar person={person} />
     </span>
   )
 }
