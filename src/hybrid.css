@@ -849,6 +849,13 @@ textarea:focus-visible {
   background: var(--paper);
 }
 
+.login-form h2 {
+  font-family: "Manrope Variable", "Plus Jakarta Sans Variable", sans-serif;
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+
 .automatic-login-spinner {
   color: var(--indigo);
 }
