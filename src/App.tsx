@@ -1,4 +1,5 @@
 import { type CSSProperties, ChangeEvent, FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ConfirmationResult,
   onAuthStateChanged,
@@ -13,9 +14,11 @@ import {
   ArrowUpRight,
   Banknote,
   Bell,
+  CalendarDays,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Contact,
   CreditCard,
@@ -127,7 +130,152 @@ const methods: PaymentMethod[] = [
   'Personal funds',
 ]
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => {
+  const value = new Date()
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const calendarMonth = new Intl.DateTimeFormat('en-IN', {
+  month: 'long',
+  year: 'numeric',
+})
+
+const calendarDayLabel = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
+
+function parseCalendarDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function calendarDateValue(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function DatePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const selectedDate = parseCalendarDate(value)
+  const [open, setOpen] = useState(false)
+  const [visibleMonth, setVisibleMonth] = useState(
+    () => new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
+  )
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setVisibleMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1))
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setOpen(false)
+      requestAnimationFrame(() => triggerRef.current?.focus())
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    requestAnimationFrame(() => dialogRef.current?.focus())
+    return () => window.removeEventListener('keydown', closeOnEscape, true)
+  }, [open, value])
+
+  const monthStart = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1)
+  const gridStart = new Date(monthStart)
+  gridStart.setDate(1 - monthStart.getDay())
+  const daysInGrid = Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(gridStart)
+    day.setDate(gridStart.getDate() + index)
+    return day
+  })
+  const todayValue = today()
+
+  function closePicker() {
+    setOpen(false)
+    requestAnimationFrame(() => triggerRef.current?.focus())
+  }
+
+  function chooseDate(day: Date) {
+    onChange(calendarDateValue(day))
+    closePicker()
+  }
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        className="date-picker-trigger"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+      >
+        <span>{selectedDate.toLocaleDateString('en-GB')}</span>
+        <CalendarDays size={17} aria-hidden="true" />
+      </button>
+      {open ? createPortal(
+        <div className="date-picker-layer" role="presentation" onPointerDown={(event) => {
+          if (event.target === event.currentTarget) closePicker()
+        }}>
+          <div
+            ref={dialogRef}
+            className="date-picker-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose date"
+            tabIndex={-1}
+          >
+            <div className="date-picker-header">
+              <strong>{calendarMonth.format(visibleMonth)}</strong>
+              <div>
+                <button
+                  type="button"
+                  aria-label="Previous month"
+                  onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}
+                ><ChevronLeft size={18} /></button>
+                <button
+                  type="button"
+                  aria-label="Next month"
+                  onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
+                ><ChevronRight size={18} /></button>
+              </div>
+            </div>
+            <div className="date-picker-weekdays" aria-hidden="true">
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
+            </div>
+            <div className="date-picker-grid">
+              {daysInGrid.map((day) => {
+                const dayValue = calendarDateValue(day)
+                const outsideMonth = day.getMonth() !== visibleMonth.getMonth()
+                return (
+                  <button
+                    type="button"
+                    key={dayValue}
+                    className={`${outsideMonth ? 'outside' : ''} ${dayValue === value ? 'selected' : ''} ${dayValue === todayValue ? 'today' : ''}`}
+                    aria-label={calendarDayLabel.format(day)}
+                    aria-pressed={dayValue === value}
+                    onClick={() => chooseDate(day)}
+                  >{day.getDate()}</button>
+                )
+              })}
+            </div>
+            <div className="date-picker-footer">
+              <button type="button" onClick={() => chooseDate(new Date())}>Today</button>
+              <button type="button" onClick={closePicker}>Cancel</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+    </>
+  )
+}
 
 const avatarPalettes = [
   { background: '#dfe7ff', shirt: '#5963d9', hair: '#29324b', skin: '#f4c7a1' },
@@ -727,6 +875,8 @@ function AddEntryModal({
     file: File
     previewUrl: string
   }>>([])
+  const [existingScreenshots, setExistingScreenshots] = useState<PaymentScreenshot[]>(entry?.screenshots ?? [])
+  const [removedScreenshots, setRemovedScreenshots] = useState<PaymentScreenshot[]>([])
   const [saving, setSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null)
   const screenshotInput = useRef<HTMLInputElement | null>(null)
@@ -814,7 +964,7 @@ function AddEntryModal({
     event.currentTarget.value = ''
     if (!incoming.length) return
 
-    const remainingSlots = MAX_PAYMENT_SCREENSHOTS - (entry?.screenshots?.length ?? 0) - screenshots.length
+    const remainingSlots = MAX_PAYMENT_SCREENSHOTS - existingScreenshots.length - screenshots.length
     const existingFiles = new Set(
       screenshots.map(({ file }) => `${file.name}:${file.size}:${file.lastModified}`),
     )
@@ -866,6 +1016,16 @@ function AddEntryModal({
     setError('')
   }
 
+  function removeExistingScreenshot(path: string) {
+    const screenshot = existingScreenshots.find((item) => item.path === path)
+    if (!screenshot) return
+    setExistingScreenshots((current) => current.filter((item) => item.path !== path))
+    setRemovedScreenshots((current) => current.some((item) => item.path === path)
+      ? current
+      : [...current, screenshot])
+    setError('')
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     const numericAmount = Number(amount)
@@ -874,7 +1034,7 @@ function AddEntryModal({
       return
     }
 
-    if (!(entry?.screenshots?.length ?? 0) && !screenshots.length) {
+    if (!existingScreenshots.length && !screenshots.length) {
       setError('Add at least one payment screenshot.')
       return
     }
@@ -921,10 +1081,17 @@ function AddEntryModal({
         status: entry?.status ?? 'open',
         ...(entry?.createdBy ? { createdBy: entry.createdBy } : {}),
         ...(entry?.review ? { review: entry.review } : {}),
-        ...(entry?.screenshots?.length || uploadedScreenshots.length
-          ? { screenshots: [...(entry?.screenshots ?? []), ...uploadedScreenshots] }
+        ...(existingScreenshots.length || uploadedScreenshots.length
+          ? { screenshots: [...existingScreenshots, ...uploadedScreenshots] }
           : {}),
       })
+      if (removedScreenshots.length) {
+        try {
+          await deletePaymentScreenshots(removedScreenshots)
+        } catch (deleteError) {
+          console.warn('[TallyBack] Removed screenshot cleanup failed', deleteError)
+        }
+      }
     } catch (saveError) {
       if (uploadedScreenshots.length) await deletePaymentScreenshots(uploadedScreenshots)
       const details = firebaseErrorDetails(saveError)
@@ -1008,10 +1175,10 @@ function AddEntryModal({
                   {methods.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </label>
-              <label className="entry-date-field">
-                Date
-                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-              </label>
+              <div className="entry-date-field form-field">
+                <span>Date</span>
+                <DatePicker value={date} onChange={setDate} />
+              </div>
             </div>
 
             <section className="payment-upload" aria-labelledby="payment-upload-title">
@@ -1024,7 +1191,7 @@ function AddEntryModal({
                   className="payment-upload-button"
                   type="button"
                   onClick={() => screenshotInput.current?.click()}
-                  disabled={saving || (entry?.screenshots?.length ?? 0) + screenshots.length >= MAX_PAYMENT_SCREENSHOTS}
+                  disabled={saving || existingScreenshots.length + screenshots.length >= MAX_PAYMENT_SCREENSHOTS}
                 >
                   <ImagePlus size={16} /> Add images
                 </button>
@@ -1039,8 +1206,12 @@ function AddEntryModal({
                 />
               </div>
 
-              {entry?.screenshots?.length ? (
-                <PaymentScreenshotGallery screenshots={entry.screenshots} />
+              {existingScreenshots.length ? (
+                <PaymentScreenshotGallery
+                  screenshots={existingScreenshots}
+                  onRemove={removeExistingScreenshot}
+                  removingDisabled={saving}
+                />
               ) : null}
 
               {screenshots.length ? (
@@ -1048,7 +1219,6 @@ function AddEntryModal({
                   {screenshots.map((screenshot, index) => (
                     <figure className="payment-preview-card" key={screenshot.id}>
                       <img src={screenshot.previewUrl} alt={`Payment screenshot ${index + 1}`} />
-                      <figcaption>{index + 1}</figcaption>
                       <button
                         type="button"
                         onClick={() => removeScreenshot(screenshot.id)}
@@ -1078,7 +1248,15 @@ function AddEntryModal({
   )
 }
 
-function PaymentScreenshotGallery({ screenshots }: { screenshots: PaymentScreenshot[] }) {
+function PaymentScreenshotGallery({
+  screenshots,
+  onRemove,
+  removingDisabled = false,
+}: {
+  screenshots: PaymentScreenshot[]
+  onRemove?: (path: string) => void
+  removingDisabled?: boolean
+}) {
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [failedPaths, setFailedPaths] = useState<string[]>([])
   const [activeScreenshot, setActiveScreenshot] = useState<{ url: string; name: string } | null>(null)
@@ -1126,23 +1304,34 @@ function PaymentScreenshotGallery({ screenshots }: { screenshots: PaymentScreens
           const imageUrl = imageUrls[screenshot.path]
           const failed = failedPaths.includes(screenshot.path)
           return (
-            <button
-              type="button"
-              className="ledger-proof-image"
-              key={screenshot.path}
-              onClick={() => imageUrl && setActiveScreenshot({ url: imageUrl, name: screenshot.name })}
-              disabled={!imageUrl}
-              aria-label={`View payment screenshot ${index + 1}`}
-            >
-              {imageUrl ? (
-                <img src={imageUrl} alt="" />
-              ) : failed ? (
-                <span><ImageIcon size={18} /> Unavailable</span>
-              ) : (
-                <span><LoaderCircle className="spin" size={18} /> Loading</span>
-              )}
-              <b>{index + 1}</b>
-            </button>
+            <div className="ledger-proof-item" key={screenshot.path}>
+              <button
+                type="button"
+                className="ledger-proof-image"
+                onClick={() => imageUrl && setActiveScreenshot({ url: imageUrl, name: screenshot.name })}
+                disabled={!imageUrl}
+                aria-label={`View payment screenshot ${index + 1}`}
+              >
+                {imageUrl ? (
+                  <img src={imageUrl} alt="" />
+                ) : failed ? (
+                  <span><ImageIcon size={18} /> Unavailable</span>
+                ) : (
+                  <span><LoaderCircle className="spin" size={18} /> Loading</span>
+                )}
+              </button>
+              {onRemove ? (
+                <button
+                  type="button"
+                  className="ledger-proof-remove"
+                  onClick={() => onRemove(screenshot.path)}
+                  disabled={removingDisabled}
+                  aria-label={`Remove ${screenshot.name || `payment screenshot ${index + 1}`}`}
+                >
+                  <Trash2 size={13} />
+                </button>
+              ) : null}
+            </div>
           )
         })}
       </div>
