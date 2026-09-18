@@ -997,11 +997,43 @@ select:focus-visible {
   }
 
   .login-form-panel {
+    min-height: 100dvh;
+    place-items: stretch;
+    padding: 28px 24px 34px;
     background: var(--cloud);
   }
 
+  .login-form {
+    width: min(100%, 600px);
+    min-height: calc(100dvh - 62px);
+    display: flex;
+    flex-direction: column;
+    margin: 0 auto;
+  }
+
   .mobile-brand {
+    justify-content: center;
+    gap: 13px;
+    margin: 0;
     color: var(--ink);
+    font-size: 31px;
+    line-height: 1;
+  }
+
+  .mobile-brand .brand-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 15px;
+  }
+
+  .mobile-brand .brand-mark span {
+    right: 10px;
+    left: 10px;
+    height: 7px;
+  }
+
+  .login-form h2 {
+    margin-top: auto;
   }
 }
 
@@ -1024,6 +1056,14 @@ select:focus-visible {
 
   .drawer-topbar {
     padding: 8px 14px;
+  }
+
+  .login-form-panel {
+    padding: 24px 20px 28px;
+  }
+
+  .login-form {
+    min-height: calc(100dvh - 52px);
   }
 }
 
