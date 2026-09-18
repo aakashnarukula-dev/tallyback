@@ -1747,9 +1747,15 @@ function TallyBackApp() {
                 </div>
 
                 <div className="people-toolbar">
-                  <div>
-                    <h2>{direction === 'receivable' ? 'Dues by person' : 'Your dues'}</h2>
-                    <p>{direction === 'receivable' ? `${allSummaries.length} saved ${allSummaries.length === 1 ? 'person' : 'people'}` : `${openEntries} open ${openEntries === 1 ? 'due' : 'dues'}`}</p>
+                  <div className="people-toolbar-summary">
+                    <div>
+                      <h2>{direction === 'receivable' ? 'Dues by person' : 'Your dues'}</h2>
+                      <p>{direction === 'receivable' ? `${allSummaries.length} saved ${allSummaries.length === 1 ? 'person' : 'people'}` : `${openEntries} open ${openEntries === 1 ? 'due' : 'dues'}`}</p>
+                    </div>
+                    <div className={`people-toolbar-total ${direction}`}>
+                      <span>Amount</span>
+                      <strong>{money.format(direction === 'receivable' ? ledgerTotals.receivable : ledgerTotals.payable)}</strong>
+                    </div>
                   </div>
                   <div className="people-toolbar-actions">
                     <label className="people-search">

@@ -712,6 +712,38 @@ a {
   font-size: 10px;
 }
 
+.people-toolbar-summary {
+  min-width: min(360px, 48%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.people-toolbar-total {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.people-toolbar-total span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.people-toolbar-total strong {
+  color: var(--indigo-dark);
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: -0.35px;
+}
+
+.people-toolbar-total.payable strong {
+  color: var(--coral);
+}
+
 .people-toolbar-actions {
   flex: 1;
   display: flex;
@@ -2657,6 +2689,11 @@ a {
     flex-direction: column;
     gap: 12px;
     padding: 20px 0 13px;
+  }
+
+  .people-toolbar-summary {
+    width: 100%;
+    min-width: 0;
   }
 
   .people-toolbar-actions {
