@@ -2584,7 +2584,6 @@ a {
   .add-person-fab {
     left: 50%;
     bottom: calc(84px + env(safe-area-inset-bottom));
-    border: 4px solid var(--cloud);
   }
 
   .desktop-add {
