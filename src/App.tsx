@@ -1355,7 +1355,6 @@ function TallyBackApp() {
     ))
   }, [allSummaries, search])
 
-  const total = allSummaries.reduce((sum, item) => sum + item.total, 0)
   const openEntries = allSummaries.reduce((sum, item) => sum + item.openCount, 0)
   const selectedSummary = allSummaries.find((item) => normalizePhone(item.person.phone) === selectedPhone)
 
@@ -1593,7 +1592,6 @@ function TallyBackApp() {
                   <div>
                     <p>Personal ledgers</p>
                     <h1>Money lives with people.</h1>
-                    <span>Open a person. Add every due inside one shared history.</span>
                   </div>
                   <button
                     className="contact-book-button"
@@ -1715,21 +1713,6 @@ function TallyBackApp() {
             )}
           </section>
 
-          {view !== 'splits' && <aside className="insights-column">
-            <section className="snapshot-card">
-              <div className="snapshot-title"><h2>At a glance</h2><span className={direction}>{direction === 'receivable' ? 'To receive' : 'To pay'}</span></div>
-              <strong className={direction === 'payable' ? 'amount-negative' : ''}>{money.format(total)}</strong>
-              <p>across {summaries.length} {summaries.length === 1 ? 'person' : 'people'}</p>
-              <div className="snapshot-rule" />
-              <div className="snapshot-meta"><span>Open entries</span><strong>{openEntries}</strong></div>
-              <div className="snapshot-meta"><span>Largest balance</span><strong>{summaries[0]?.person.name ?? '—'}</strong></div>
-            </section>
-
-            <section className="privacy-card">
-              <ShieldCheck size={20} />
-              <div><strong>Shared, not public</strong><p>Each entry is visible only to the two mobile numbers on it.</p></div>
-            </section>
-          </aside>}
         </div>
       </main>
 
