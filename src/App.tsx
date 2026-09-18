@@ -1888,7 +1888,7 @@ function TallyBackApp() {
                       <p>{allSummaries.length} {allSummaries.length <= 1 ? 'person' : 'people'}</p>
                     </div>
                     <div className={`people-toolbar-total ${direction}`}>
-                      <span>{direction === 'receivable' ? 'Total to receive' : 'Total due'}</span>
+                      <span>{direction === 'receivable' ? 'Total to receive' : 'Total to pay'}</span>
                       <strong>{money.format(direction === 'receivable' ? ledgerTotals.receivable : ledgerTotals.payable)}</strong>
                     </div>
                   </div>
