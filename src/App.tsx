@@ -2333,6 +2333,12 @@ function TallyBackApp() {
                       <Search size={17} />
                       <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or number" />
                     </label>
+                    {direction === 'receivable' && !dataLoading && !contactsLoading && allSummaries.length > 0 ? (
+                      <button className="add-person-inline" type="button" onClick={chooseContacts} disabled={importingContacts}>
+                        <Contact size={17} />
+                        <span>{importingContacts ? 'Opening…' : 'Add person'}</span>
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2417,12 +2423,6 @@ function TallyBackApp() {
 
         </div>
       </main>
-
-      {view === 'ledger' && direction === 'receivable' && !dataLoading && !contactsLoading && allSummaries.length > 0 ? (
-        <button className="add-person-fab" type="button" onClick={chooseContacts} disabled={importingContacts}>
-          <Contact size={18} /> <span>{importingContacts ? 'Opening contacts…' : 'Add person'}</span>
-        </button>
-      ) : null}
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
         <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><ReceiptText size={20} /><span>Dues</span></button>
