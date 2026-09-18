@@ -8,7 +8,6 @@ import {
   Plus,
   Save,
   Trash2,
-  UsersRound,
 } from 'lucide-react'
 import { Person } from './data'
 import {
@@ -147,40 +146,30 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
 
   return (
     <section className="split-workspace">
-      <div className="split-page-heading">
-        <div>
-          <p>Shared expenses</p>
-          <h1>Split payments</h1>
-          <span>Create one link, track every share, and keep the same totals in your ledger.</span>
-        </div>
-        <button className="primary-button" type="button" onClick={startNew}><Plus size={17} /> New split</button>
-      </div>
-
-      <div className="split-admin-layout">
-        <aside className="split-list-panel">
-          <div className="split-list-title"><strong>Your splits</strong><span>{pages.length}</span></div>
-          <div className="split-list">
-            {pages.map((page) => {
-              const paidCount = page.recipients.filter((row) => row.status === 'paid').length
-              return (
-                <button type="button" key={page.id} className={selectedId === page.id ? 'active' : ''} onClick={() => selectPage(page)}>
-                  <span><strong>{page.title}</strong><small>{paidCount}/{page.recipients.length} paid</small></span>
-                  <em className={page.active ? 'live' : ''}>{page.active ? 'Live' : 'Paused'}</em>
-                </button>
-              )
-            })}
-            {!loading && !pages.length && (
-              <div className="split-list-empty"><UsersRound size={20} /><p>No splits yet. Create one for a trip, dinner, rent, or group gift.</p></div>
-            )}
-            {loading && <div className="split-list-empty"><p>Loading your splits…</p></div>}
-          </div>
-        </aside>
+      <div className={`split-admin-layout ${!loading && !pages.length ? 'single' : ''}`}>
+        {(loading || pages.length > 0) ? (
+          <aside className="split-list-panel">
+            <div className="split-list-title"><strong>Your splits</strong><span>{pages.length}</span></div>
+            <div className="split-list">
+              {pages.map((page) => {
+                const paidCount = page.recipients.filter((row) => row.status === 'paid').length
+                return (
+                  <button type="button" key={page.id} className={selectedId === page.id ? 'active' : ''} onClick={() => selectPage(page)}>
+                    <span><strong>{page.title}</strong><small>{paidCount}/{page.recipients.length} paid</small></span>
+                    <em className={page.active ? 'live' : ''}>{page.active ? 'Live' : 'Paused'}</em>
+                  </button>
+                )
+              })}
+              {loading ? <div className="split-list-empty"><p>Loading splits…</p></div> : null}
+            </div>
+          </aside>
+        ) : null}
 
         <form className="split-editor" onSubmit={save}>
           <div className="split-editor-bar">
-            <div><small>{selectedId ? 'Owner panel' : 'New shared expense'}</small><strong>{draft.title || 'Untitled split'}</strong></div>
+            <div><strong>{draft.title || 'Untitled split'}</strong></div>
             <div>
-              <button className="secondary-button" type="button" onClick={copyLink} disabled={!selectedId}><Copy size={15} /> Copy link</button>
+              {selectedId ? <button className="secondary-button" type="button" onClick={copyLink}><Copy size={15} /> Copy link</button> : null}
               {selectedId && <a className="secondary-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Preview</a>}
               <button className="primary-button" type="submit" disabled={saving}><Save size={15} /> {saving ? 'Saving…' : 'Save'}</button>
             </div>
@@ -190,14 +179,14 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
             <label>Split title<input required value={draft.title} maxLength={100} placeholder="Goa trip" onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
             <label className="split-live-toggle">
               <input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} />
-              <span><strong>{draft.active ? 'Payment link is live' : 'Payment link is paused'}</strong><small>Pause it without losing any records.</small></span>
+              <span><strong>{draft.active ? 'Payment link is live' : 'Payment link is paused'}</strong></span>
             </label>
             <label className="split-note-field">Short note<textarea value={draft.description} maxLength={280} placeholder="What is everyone contributing towards?" onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></label>
           </div>
 
           <div className="split-form-card">
             <div className="split-members-heading">
-              <div><h2>People &amp; shares</h2><p>Numbers stay private. Names, amounts, and payment status appear on the shared page.</p></div>
+              <div><h2>People &amp; shares</h2><p>Phone numbers stay private.</p></div>
               <div><span>{money.format(paid)} collected</span><strong>{money.format(total)} total</strong></div>
             </div>
 
@@ -227,6 +216,8 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
           {selectedId && <p className="split-link-note"><Link2 size={15} /> tally-back.web.app/split/{selectedId}</p>}
         </form>
       </div>
+
+      <button className="add-person-fab" type="button" onClick={startNew}><Plus size={18} /> <span>New split</span></button>
     </section>
   )
 }
