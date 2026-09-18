@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, ChangeEvent, FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ConfirmationResult,
   onAuthStateChanged,
@@ -15,7 +15,6 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Contact,
   CreditCard,
@@ -1155,12 +1154,90 @@ function PersonDrawer({
 }) {
   const openDueEntries = summary.entries.filter((entry) => entry.status === 'open')
   const firstName = summary.person.name.split(' ')[0]
+  const sheetRef = useRef<HTMLElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const dragStartRef = useRef({ y: 0, time: 0 })
+  const dragYRef = useRef(0)
+  const [dragY, setDragY] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const [closing, setClosing] = useState(false)
+
+  function closeSheet() {
+    if (closing) return
+    setClosing(true)
+    setDragging(false)
+    closeTimerRef.current = window.setTimeout(onClose, 240)
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || closing) return
+    dragStartRef.current = { y: event.clientY, time: performance.now() }
+    dragYRef.current = 0
+    setDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closing) return
+    const nextDragY = Math.max(0, event.clientY - dragStartRef.current.y)
+    dragYRef.current = nextDragY
+    setDragY(nextDragY)
+  }
+
+  function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closing) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    const elapsed = Math.max(performance.now() - dragStartRef.current.time, 1)
+    const velocity = dragYRef.current / elapsed
+    if (dragYRef.current > Math.min(130, window.innerHeight * 0.16) || (dragYRef.current > 28 && velocity > 0.55)) {
+      closeSheet()
+      return
+    }
+    dragYRef.current = 0
+    setDragging(false)
+    setDragY(0)
+  }
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    sheetRef.current?.focus()
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSheet()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+    }
+  }, [])
 
   return (
-    <div className="drawer-backdrop" onMouseDown={onClose} role="presentation">
-      <aside className="person-drawer" role="dialog" aria-modal="true" aria-labelledby="person-ledger-title" onMouseDown={(event) => event.stopPropagation()}>
+    <div className={`drawer-backdrop ${closing ? 'closing' : ''}`} onPointerDown={(event) => { if (event.target === event.currentTarget) closeSheet() }} role="presentation">
+      <aside
+        ref={sheetRef}
+        className={`person-drawer ${dragging ? 'dragging' : ''} ${closing ? 'closing' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="person-ledger-title"
+        tabIndex={-1}
+        style={{ '--sheet-drag-y': `${dragY}px` } as CSSProperties}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button
+          className="drawer-grabber"
+          type="button"
+          aria-label="Drag down to close details"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+        ><span /></button>
         <header className="drawer-topbar">
-          <button className="drawer-back" onClick={onClose} aria-label="Close details"><ChevronLeft size={20} /></button>
+          <button className="drawer-back" onClick={closeSheet} aria-label="Close details"><X size={18} /></button>
           <div className="drawer-person-title">
             <Avatar person={summary.person} size="sm" />
             <span className="drawer-person-copy">
@@ -1381,7 +1458,6 @@ function TallyBackApp() {
         setReviewEntry(null)
         setDeleteEntryTarget(null)
         setDeleteContactTarget(null)
-        setSelectedPhone(null)
         setProfileOpen(false)
       }
     }
