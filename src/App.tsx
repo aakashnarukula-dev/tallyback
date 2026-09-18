@@ -412,7 +412,7 @@ function LoginScreen({
             <BrandMark />
             <span>TallyBack</span>
           </div>
-          <p className="login-step">{confirmation ? 'Check your messages' : 'Welcome'}</p>
+          {confirmation ? <p className="login-step">Check your messages</p> : null}
           <h2>{confirmation ? 'Enter your code.' : 'Your money, remembered.'}</h2>
           <p className="login-subtitle">
             {confirmation
