@@ -810,6 +810,24 @@ textarea:focus-visible {
   box-shadow: 0 10px 30px rgba(32, 48, 46, 0.2);
 }
 
+/* Compact secondary action with a full mobile tap target. */
+.split-editor .split-add-member {
+  min-width: 132px;
+  min-height: 44px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.split-editor .split-add-member svg {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 860px) {
   .topbar {
     background: rgba(242, 246, 245, 0.94);
