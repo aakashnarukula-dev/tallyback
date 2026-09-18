@@ -1359,14 +1359,6 @@ function TallyBackApp() {
   const openEntries = allSummaries.reduce((sum, item) => sum + item.openCount, 0)
   const selectedSummary = allSummaries.find((item) => normalizePhone(item.person.phone) === selectedPhone)
 
-  const methodTotals = useMemo(() => {
-    const totals = new Map<PaymentMethod, number>()
-    relevantEntries.filter((entry) => entry.status === 'open').forEach((entry) => {
-      totals.set(entry.method, (totals.get(entry.method) ?? 0) + entry.amount)
-    })
-    return [...totals.entries()].sort((a, b) => b[1] - a[1])
-  }, [relevantEntries])
-
   const recentEntries = useMemo(
     () => [...relevantEntries].sort((a, b) => b.date.localeCompare(a.date)),
     [relevantEntries],
@@ -1731,24 +1723,6 @@ function TallyBackApp() {
               <div className="snapshot-rule" />
               <div className="snapshot-meta"><span>Open entries</span><strong>{openEntries}</strong></div>
               <div className="snapshot-meta"><span>Largest balance</span><strong>{summaries[0]?.person.name ?? '—'}</strong></div>
-            </section>
-
-            <section className="methods-card">
-              <div className="side-card-heading"><h2>By payment method</h2><span>{openEntries} entries</span></div>
-              <div className="method-stack">
-                {methodTotals.map(([method, amount]) => {
-                  const Icon = methodIcons[method]
-                  const percentage = total ? Math.round((amount / total) * 100) : 0
-                  return (
-                    <div className="method-row" key={method}>
-                      <span className="method-icon"><Icon size={17} /></span>
-                      <div><strong>{method}</strong><span><i style={{ width: `${percentage}%` }} /></span></div>
-                      <em>{money.format(amount)}</em>
-                    </div>
-                  )
-                })}
-                {methodTotals.length === 0 && <p className="quiet-empty">No open payments yet.</p>}
-              </div>
             </section>
 
             <section className="privacy-card">

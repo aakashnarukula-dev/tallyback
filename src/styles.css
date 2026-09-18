@@ -509,8 +509,7 @@ a {
 }
 
 .ledger-toolbar h2,
-.snapshot-card h2,
-.methods-card h2 {
+.snapshot-card h2 {
   margin: 0;
   font-size: 14px;
   letter-spacing: -0.2px;
@@ -982,16 +981,14 @@ a {
   padding-top: 68px;
 }
 
-.snapshot-card,
-.methods-card {
+.snapshot-card {
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--paper);
 }
 
-.snapshot-title,
-.side-card-heading {
+.snapshot-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1050,25 +1047,6 @@ a {
   font-size: 11px;
 }
 
-.side-card-heading > span {
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.method-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin-top: 20px;
-}
-
-.method-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 11px;
-}
-
 .method-icon {
   width: 33px;
   height: 33px;
@@ -1078,44 +1056,6 @@ a {
   border-radius: 10px;
   background: #f0f3f8;
   color: #687286;
-}
-
-.method-row > div {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.method-row strong,
-.method-row em {
-  font-size: 10px;
-  font-style: normal;
-}
-
-.method-row > div > span {
-  height: 3px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #edf0f5;
-}
-
-.method-row i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--indigo);
-}
-
-.method-row em {
-  color: #545d70;
-  font-weight: 650;
-}
-
-.quiet-empty {
-  margin: 3px 0;
-  color: var(--muted);
-  font-size: 11px;
 }
 
 .privacy-card {
