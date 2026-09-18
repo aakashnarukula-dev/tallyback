@@ -673,6 +673,7 @@ function AddEntryModal({
   const closeTimerRef = useRef<number | null>(null)
   const dragStartRef = useRef({ y: 0, time: 0 })
   const dragYRef = useRef(0)
+  const draggingRef = useRef(false)
   const savingRef = useRef(false)
   const closingRef = useRef(false)
   const [dragY, setDragY] = useState(0)
@@ -684,6 +685,7 @@ function AddEntryModal({
   function closeSheet(force = false) {
     if (closingRef.current || (savingRef.current && !force)) return
     closingRef.current = true
+    draggingRef.current = false
     setClosing(true)
     setDragging(false)
     closeTimerRef.current = window.setTimeout(onClose, 240)
@@ -693,20 +695,21 @@ function AddEntryModal({
     if (event.button !== 0 || closingRef.current || savingRef.current) return
     dragStartRef.current = { y: event.clientY, time: performance.now() }
     dragYRef.current = 0
+    draggingRef.current = true
     setDragging(true)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
-  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (!dragging || closingRef.current) return
-    const nextDragY = Math.max(0, event.clientY - dragStartRef.current.y)
+  function moveDrag(clientY: number) {
+    if (!draggingRef.current || closingRef.current) return
+    const nextDragY = Math.max(0, clientY - dragStartRef.current.y)
     dragYRef.current = nextDragY
     setDragY(nextDragY)
   }
 
-  function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (!dragging || closingRef.current) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  function finishDrag() {
+    if (!draggingRef.current || closingRef.current) return
+    draggingRef.current = false
     const elapsed = Math.max(performance.now() - dragStartRef.current.time, 1)
     const velocity = dragYRef.current / elapsed
     if (dragYRef.current > Math.min(130, window.innerHeight * 0.16) || (dragYRef.current > 28 && velocity > 0.55)) {
@@ -725,11 +728,19 @@ function AddEntryModal({
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeSheet()
     }
+    const moveSheet = (event: PointerEvent) => moveDrag(event.clientY)
+    const finishSheetDrag = () => finishDrag()
     window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('pointermove', moveSheet)
+    window.addEventListener('pointerup', finishSheetDrag)
+    window.addEventListener('pointercancel', finishSheetDrag)
 
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('pointermove', moveSheet)
+      window.removeEventListener('pointerup', finishSheetDrag)
+      window.removeEventListener('pointercancel', finishSheetDrag)
       if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
       previewUrls.current.forEach((url) => URL.revokeObjectURL(url))
       previewUrls.current.clear()
@@ -873,9 +884,6 @@ function AddEntryModal({
           type="button"
           aria-label="Drag down to close add due"
           onPointerDown={startDrag}
-          onPointerMove={moveDrag}
-          onPointerUp={finishDrag}
-          onPointerCancel={finishDrag}
         ><span /></button>
         <div className="modal-header add-entry-header">
           <div>
