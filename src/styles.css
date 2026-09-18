@@ -760,7 +760,6 @@ a {
   border: 1px solid #dfe4ed;
   border-radius: 17px;
   background: var(--paper);
-  box-shadow: inset 3px 0 0 var(--indigo-soft);
 }
 
 .contact-ledger-main {
