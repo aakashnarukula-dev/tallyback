@@ -1627,7 +1627,6 @@ function TallyBackApp() {
     ))
   }, [allSummaries, search])
 
-  const openEntries = allSummaries.reduce((sum, item) => sum + item.openCount, 0)
   const selectedSummary = allSummaries.find((item) => normalizePhone(item.person.phone) === selectedPhone)
 
   const recentEntries = useMemo(
@@ -1886,7 +1885,7 @@ function TallyBackApp() {
                   <div className="people-toolbar-summary">
                     <div>
                       <h2>{direction === 'receivable' ? 'People who owe you' : 'People you owe'}</h2>
-                      <p>{direction === 'receivable' ? `${allSummaries.length} ${allSummaries.length === 1 ? 'person' : 'people'}` : `${openEntries} open ${openEntries === 1 ? 'due' : 'dues'}`}</p>
+                      <p>{allSummaries.length} {allSummaries.length <= 1 ? 'person' : 'people'}</p>
                     </div>
                     <div className={`people-toolbar-total ${direction}`}>
                       <span>{direction === 'receivable' ? 'Outstanding balance' : 'Total due'}</span>
