@@ -491,6 +491,26 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
+.entry-form-grid .amount-field {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.entry-form-grid .entry-method-field {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.entry-form-grid .entry-occasion-field {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.entry-form-grid .entry-date-field {
+  grid-column: 2;
+  grid-row: 2;
+}
+
 .add-entry-actions {
   border-color: var(--line);
   background: rgba(252, 254, 253, 0.97);

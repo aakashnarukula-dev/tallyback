@@ -880,17 +880,7 @@ function AddEntryModal({
                     </figure>
                   ))}
                 </div>
-              ) : (
-                <button
-                  className="payment-upload-empty"
-                  type="button"
-                  onClick={() => screenshotInput.current?.click()}
-                  disabled={saving}
-                >
-                  <ImageIcon size={18} />
-                  <span>Add receipts or payment confirmations</span>
-                </button>
-              )}
+              ) : null}
             </section>
 
             {error && <p className="form-error">{error}</p>}
