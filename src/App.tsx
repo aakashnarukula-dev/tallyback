@@ -1728,13 +1728,6 @@ function TallyBackApp() {
           <section className="ledger-column">
             {view === 'ledger' ? (
               <section className="people-workspace">
-                <header className="people-hero">
-                  <div>
-                    <p>Dues</p>
-                    <h1>Money lives with people.</h1>
-                  </div>
-                </header>
-
                 <div className="balance-switch people-balance-switch" role="tablist" aria-label="Choose ledger side">
                   <button role="tab" aria-selected={direction === 'receivable'} className={direction === 'receivable' ? 'active receive' : ''} onClick={() => setDirection('receivable')}>
                     <span className="switch-icon"><ArrowDownLeft size={19} /></span>
