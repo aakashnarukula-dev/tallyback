@@ -735,12 +735,28 @@ label,
 }
 
 .sheet-grabber,
-.drawer-grabber,
-.add-person-grabber {
+.drawer-grabber span,
+.add-person-grabber span {
   width: 48px;
   height: 4px;
   border-radius: 999px;
   background: #bfd0cc;
+}
+
+.drawer-grabber,
+.add-person-grabber {
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.drawer-grabber {
+  height: 26px;
+}
+
+.add-person-grabber {
+  height: 30px;
+  margin-left: 0;
 }
 
 .modal-header {
@@ -1108,7 +1124,7 @@ label,
 }
 
 .split-editor {
-  z-index: 40;
+  z-index: 100;
   background: var(--studio-mist);
 }
 
@@ -1407,13 +1423,14 @@ label,
   }
 
   .add-person-fab {
-    right: 50%;
+    right: auto;
     bottom: 78px;
-    transform: translateX(50%);
+    left: 50%;
+    transform: translateX(-50%);
   }
 
   .add-person-fab:hover {
-    transform: translateX(50%) translateY(-1px);
+    transform: translateX(-50%) translateY(-1px);
   }
 
   .toast {
