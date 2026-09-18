@@ -1896,7 +1896,7 @@ function TallyBackApp() {
 
   useEffect(() => {
     if (!toast) return
-    const timer = window.setTimeout(() => setToast(''), 2800)
+    const timer = window.setTimeout(() => setToast(''), 1000)
     return () => window.clearTimeout(timer)
   }, [toast])
 
