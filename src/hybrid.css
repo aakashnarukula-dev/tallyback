@@ -531,8 +531,7 @@ textarea:focus-visible {
 }
 
 .review-reason-picker button.active,
-.delete-warning-icon,
-.delete-contact-button {
+.delete-warning-icon {
   border-color: #ecc7b8;
   background: var(--coral-soft);
   color: #a84d3d;
@@ -609,6 +608,14 @@ textarea:focus-visible {
   color: #fff;
   font-size: 10px;
   font-weight: 710;
+}
+
+.drawer-delete-contact {
+  width: 38px;
+  height: 38px;
+  border-color: #ecc7b8;
+  background: var(--coral-soft);
+  color: #a84d3d;
 }
 
 .drawer-entries {

@@ -825,12 +825,6 @@ textarea:focus-visible {
   color: #b4565f;
 }
 
-.delete-contact-button {
-  border-color: #eccfd0;
-  background: #fae5e4;
-  color: #a95059;
-}
-
 /* Person ledger sheet */
 .drawer-backdrop {
   align-items: end;

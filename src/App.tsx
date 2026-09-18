@@ -1408,9 +1408,22 @@ function PersonDrawer({
             </span>
           </div>
           {direction === 'receivable' ? (
-            <button className="drawer-quick-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
-              <Plus size={16} /> Add due
-            </button>
+            <div className="drawer-topbar-actions">
+              <button className="drawer-quick-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
+                <Plus size={16} /> Add due
+              </button>
+              {!summary.openCount ? (
+                <button
+                  className="drawer-delete-contact"
+                  type="button"
+                  onClick={() => onDeleteContact(summary.person)}
+                  aria-label={`Delete ${summary.person.name}`}
+                  title="Delete contact"
+                >
+                  <Trash2 size={17} />
+                </button>
+              ) : null}
+            </div>
           ) : <span className="drawer-topbar-spacer" aria-hidden="true" />}
         </header>
         <div className="drawer-entries">
@@ -1426,12 +1439,6 @@ function PersonDrawer({
               <ReceiptText size={21} />
               <strong>No dues yet</strong>
               <span>{direction === 'receivable' ? `Add first due for ${firstName}.` : 'New dues assigned to you appear here.'}</span>
-              {direction === 'receivable' ? (
-                <div className="drawer-empty-actions">
-                  <button className="secondary-button" type="button" onClick={() => onAddDue(summary.person)}><Plus size={15} /> <span>Add due</span></button>
-                  <button className="delete-contact-button" type="button" onClick={() => onDeleteContact(summary.person)}><Trash2 size={15} /> <span>Delete contact</span></button>
-                </div>
-              ) : null}
             </div>
           ) : null}
           <div className="drawer-entry-list">

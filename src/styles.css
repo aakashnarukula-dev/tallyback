@@ -2032,6 +2032,26 @@ a {
   white-space: nowrap;
 }
 
+.drawer-topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.drawer-delete-contact {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #f0d0ca;
+  border-radius: 11px;
+  background: var(--coral-soft);
+  color: var(--coral);
+}
+
 .drawer-topbar-spacer {
   width: 1px;
 }
@@ -2109,41 +2129,6 @@ a {
 .drawer-empty-ledger > span {
   margin-top: 4px;
   font-size: 9px;
-}
-
-.drawer-empty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  margin-top: 15px;
-}
-
-.drawer-empty-actions .secondary-button,
-.delete-contact-button {
-  min-height: 35px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 13px;
-  line-height: 1;
-  font-size: 10px;
-}
-
-.drawer-empty-actions .secondary-button svg,
-.delete-contact-button svg {
-  flex: 0 0 auto;
-  margin: 0;
-}
-
-.delete-contact-button {
-  border: 1px solid #f0d0ca;
-  border-radius: 12px;
-  background: var(--coral-soft);
-  color: var(--coral);
-  font-weight: 700;
 }
 
 .drawer-entry {
