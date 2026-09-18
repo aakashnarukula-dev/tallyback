@@ -2035,8 +2035,17 @@ function TallyBackApp() {
                   {!dataLoading && !contactsLoading && summaries.length === 0 ? (
                     <div className="people-empty-state">
                       <span><Contact size={25} /></span>
-                      <h3>{search ? 'No matching person' : direction === 'receivable' ? 'Bring in your people' : 'Nothing to pay back'}</h3>
-                      <p>{search ? 'Search another name or mobile number.' : direction === 'receivable' ? 'Choose contacts from your phone, then keep every due inside each person’s ledger.' : 'Dues assigned to your mobile number appear here.'}</p>
+                      {search ? (
+                        <>
+                          <h3>No matching person</h3>
+                          <p>Search another name or mobile number.</p>
+                        </>
+                      ) : direction === 'payable' ? (
+                        <>
+                          <h3>Nothing to pay back</h3>
+                          <p>Dues assigned to your mobile number appear here.</p>
+                        </>
+                      ) : null}
                       {!search && direction === 'receivable' ? (
                         <button className="primary-button" type="button" onClick={chooseContacts}><Contact size={17} /> {contactPickerAvailable ? 'Choose contacts' : 'Add person'}</button>
                       ) : null}
