@@ -309,6 +309,7 @@ service cloud.firestore {
                 'occasion',
                 'method',
                 'date',
+                'screenshots',
                 'updatedAt'
               ])
           )

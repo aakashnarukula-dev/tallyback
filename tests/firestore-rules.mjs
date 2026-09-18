@@ -15,6 +15,7 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } from 'firebase/firestore'
 import {
@@ -173,6 +174,16 @@ try {
   const smsDatabase = testEnvironment
     .authenticatedContext('sms-user', { phone_number: otherPhone })
     .firestore()
+  await assertSucceeds(updateDoc(doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'), {
+    amount: 275,
+    occasion: 'Updated payment with proof',
+    screenshots: attachmentEntry.screenshots.slice(0, 4),
+    updatedAt: serverTimestamp(),
+  }))
+  await assertFails(updateDoc(doc(smsDatabase, 'ledgerEntries', 'attachment-entry'), {
+    amount: 1,
+    updatedAt: serverTimestamp(),
+  }))
   const smsQuery = query(
     collection(smsDatabase, 'ledgerEntries'),
     or(
@@ -246,7 +257,7 @@ try {
   await assertFails(deleteDoc(doc(smsDatabase, 'ledgerEntries', 'saved-entry')))
   await assertSucceeds(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', 'saved-entry')))
 
-  console.log('Firestore and Storage rules: private deletable contacts, unified split dues, participant ledgers, creator-only due deletion, and payment proofs passed.')
+  console.log('Firestore and Storage rules: private contacts, unified split dues, creator-only due edits and deletion, participant ledgers, and payment proofs passed.')
 } finally {
   await testEnvironment.cleanup()
 }

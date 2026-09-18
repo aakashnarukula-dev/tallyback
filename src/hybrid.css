@@ -669,6 +669,7 @@ textarea:focus-visible {
 }
 
 .entry-action,
+.entry-edit-action,
 .entry-delete-action {
   min-height: 36px;
   border-radius: 10px;
@@ -681,9 +682,18 @@ textarea:focus-visible {
   color: #5e61b9;
 }
 
+.entry-edit-action {
+  background: #e4f0ed;
+  color: #39796c;
+}
+
 .entry-delete-action {
   background: var(--coral-soft);
   color: #a84d3d;
+}
+
+.payment-upload > .ledger-proof-block {
+  margin-top: 10px;
 }
 
 .drawer-empty-ledger {

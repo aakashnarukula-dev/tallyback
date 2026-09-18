@@ -25,6 +25,7 @@ import {
   Landmark,
   LoaderCircle,
   LogOut,
+  Pencil,
   Plus,
   ReceiptText,
   Search,
@@ -54,6 +55,7 @@ import {
   settleEntry as settleFirebaseEntry,
   subscribeToEntries,
   toE164,
+  updateEntry as updateFirebaseEntry,
 } from './firebase-ledger'
 import {
   canPickDeviceContacts,
@@ -647,18 +649,20 @@ function AddPersonModal({
 function AddEntryModal({
   currentUser,
   contact,
+  entry,
   onClose,
   onSave,
 }: {
   currentUser: Person
   contact: Person
+  entry?: LedgerEntry
   onClose: () => void
   onSave: (entry: LedgerEntry) => Promise<void>
 }) {
-  const [amount, setAmount] = useState('')
-  const [occasion, setOccasion] = useState('')
-  const [method, setMethod] = useState<PaymentMethod>('UPI')
-  const [date, setDate] = useState(today())
+  const [amount, setAmount] = useState(entry ? String(entry.amount) : '')
+  const [occasion, setOccasion] = useState(entry?.occasion ?? '')
+  const [method, setMethod] = useState<PaymentMethod>(entry?.method ?? 'UPI')
+  const [date, setDate] = useState(entry?.date ?? today())
   const [error, setError] = useState('')
   const [screenshots, setScreenshots] = useState<Array<{
     id: string
@@ -752,7 +756,7 @@ function AddEntryModal({
     event.currentTarget.value = ''
     if (!incoming.length) return
 
-    const remainingSlots = MAX_PAYMENT_SCREENSHOTS - screenshots.length
+    const remainingSlots = MAX_PAYMENT_SCREENSHOTS - (entry?.screenshots?.length ?? 0) - screenshots.length
     const existingFiles = new Set(
       screenshots.map(({ file }) => `${file.name}:${file.size}:${file.lastModified}`),
     )
@@ -812,7 +816,7 @@ function AddEntryModal({
       return
     }
 
-    if (!screenshots.length) {
+    if (!(entry?.screenshots?.length ?? 0) && !screenshots.length) {
       setError('Add at least one payment screenshot.')
       return
     }
@@ -822,7 +826,7 @@ function AddEntryModal({
       return
     }
 
-    const entryId = `loan-${Date.now()}`
+    const entryId = entry?.id ?? `loan-${Date.now()}`
     let uploadedScreenshots: PaymentScreenshot[] = []
 
     try {
@@ -840,18 +844,22 @@ function AddEntryModal({
 
       await onSave({
         id: entryId,
-        lender: currentUser,
-        borrower: contact,
+        lender: entry?.lender ?? currentUser,
+        borrower: entry?.borrower ?? contact,
         amount: numericAmount,
         occasion: occasion.trim(),
         method,
         date,
-        status: 'open',
-        ...(uploadedScreenshots.length ? { screenshots: uploadedScreenshots } : {}),
+        status: entry?.status ?? 'open',
+        ...(entry?.createdBy ? { createdBy: entry.createdBy } : {}),
+        ...(entry?.review ? { review: entry.review } : {}),
+        ...(entry?.screenshots?.length || uploadedScreenshots.length
+          ? { screenshots: [...(entry?.screenshots ?? []), ...uploadedScreenshots] }
+          : {}),
       })
     } catch {
       if (uploadedScreenshots.length) await deletePaymentScreenshots(uploadedScreenshots)
-      setError('Could not upload or save this entry. Check your connection and try again.')
+      setError(`Could not ${entry ? 'update' : 'save'} this due. Check your connection and try again.`)
     } finally {
       setSaving(false)
       setUploadProgress(null)
@@ -862,7 +870,7 @@ function AddEntryModal({
     ? uploadProgress
       ? `Uploading ${uploadProgress.completed}/${uploadProgress.total}`
       : 'Saving…'
-    : 'Save entry'
+    : entry ? 'Save changes' : 'Save entry'
 
   return (
     <div
@@ -887,7 +895,7 @@ function AddEntryModal({
         ><span /></button>
         <div className="modal-header add-entry-header">
           <div>
-            <h2 id="add-entry-title">Add due</h2>
+            <h2 id="add-entry-title">{entry ? 'Edit due' : 'Add due'}</h2>
           </div>
           <button className="icon-button" type="button" onClick={() => closeSheet()} aria-label="Close dialog" disabled={saving}>
             <X size={20} />
@@ -936,7 +944,7 @@ function AddEntryModal({
                   className="payment-upload-button"
                   type="button"
                   onClick={() => screenshotInput.current?.click()}
-                  disabled={saving || screenshots.length >= MAX_PAYMENT_SCREENSHOTS}
+                  disabled={saving || (entry?.screenshots?.length ?? 0) + screenshots.length >= MAX_PAYMENT_SCREENSHOTS}
                 >
                   <ImagePlus size={16} /> Add images
                 </button>
@@ -950,6 +958,10 @@ function AddEntryModal({
                   aria-label="Upload payment screenshots"
                 />
               </div>
+
+              {entry?.screenshots?.length ? (
+                <PaymentScreenshotGallery screenshots={entry.screenshots} />
+              ) : null}
 
               {screenshots.length ? (
                 <div className="payment-preview-rail" aria-label="Selected payment screenshots">
@@ -1280,6 +1292,7 @@ function PersonDrawer({
   resolvingReviewId,
   onClose,
   onAddDue,
+  onEditDue,
   onDeleteContact,
   onDeleteDue,
   onOpenSplit,
@@ -1293,6 +1306,7 @@ function PersonDrawer({
   resolvingReviewId: string | null
   onClose: () => void
   onAddDue: (person: Person) => void
+  onEditDue: (entry: LedgerEntry) => void
   onDeleteContact: (person: Person) => void
   onDeleteDue: (entry: LedgerEntry) => void
   onOpenSplit: () => void
@@ -1462,7 +1476,10 @@ function PersonDrawer({
                       {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark as paid</button> : null}
                       {splitReference
                         ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
-                        : <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button>}
+                        : <>
+                            <button className="entry-edit-action" type="button" onClick={() => onEditDue(entry)} aria-label={`Edit ${entry.occasion} due`}><Pencil size={15} /> Edit</button>
+                            <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button>
+                          </>}
                     </div>
                   ) : !review ? (
                     <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
@@ -1489,6 +1506,7 @@ function TallyBackApp() {
   const [search, setSearch] = useState('')
   const [showAddPerson, setShowAddPerson] = useState(false)
   const [addDuePerson, setAddDuePerson] = useState<Person | null>(null)
+  const [editEntryTarget, setEditEntryTarget] = useState<LedgerEntry | null>(null)
   const [importingContacts, setImportingContacts] = useState(false)
   const [reviewEntry, setReviewEntry] = useState<LedgerEntry | null>(null)
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<LedgerEntry | null>(null)
@@ -1603,6 +1621,7 @@ function TallyBackApp() {
       if (event.key === 'Escape') {
         setShowAddPerson(false)
         setAddDuePerson(null)
+        setEditEntryTarget(null)
         setReviewEntry(null)
         setDeleteEntryTarget(null)
         setDeleteContactTarget(null)
@@ -1736,6 +1755,21 @@ function TallyBackApp() {
       setToast('Entry saved. Both sides now share the same record.')
     } catch (error) {
       setToast('Could not save this entry. Please try again.')
+      throw error
+    }
+  }
+
+  async function updateEntry(entry: LedgerEntry) {
+    try {
+      if (!auth?.currentUser) throw new Error('Sign in required')
+      await updateFirebaseEntry(entry)
+      setEntries((currentEntries) => currentEntries.map((currentEntry) => (
+        currentEntry.id === entry.id ? { ...currentEntry, ...entry } : currentEntry
+      )))
+      setEditEntryTarget(null)
+      setToast('Due updated in both ledgers.')
+    } catch (error) {
+      setToast('Could not update this due. Please try again.')
       throw error
     }
   }
@@ -2065,6 +2099,7 @@ function TallyBackApp() {
         resolvingReviewId={resolvingReviewId}
         onClose={() => setSelectedPhone(null)}
         onAddDue={startAddDue}
+        onEditDue={setEditEntryTarget}
         onDeleteContact={setDeleteContactTarget}
         onDeleteDue={setDeleteEntryTarget}
         onOpenSplit={() => {
@@ -2076,6 +2111,7 @@ function TallyBackApp() {
         onResolveReview={resolveReview}
       />}
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
+      {editEntryTarget ? <AddEntryModal currentUser={currentUser} contact={editEntryTarget.borrower} entry={editEntryTarget} onClose={() => setEditEntryTarget(null)} onSave={updateEntry} /> : null}
       {reviewEntry ? <ReviewRequestModal entry={reviewEntry} onClose={() => setReviewEntry(null)} onSend={(draft) => sendReviewRequest(reviewEntry, draft)} /> : null}
       {deleteEntryTarget ? <DeleteDueModal entry={deleteEntryTarget} onClose={() => setDeleteEntryTarget(null)} onDelete={deleteDue} /> : null}
       {deleteContactTarget ? <DeleteContactModal person={deleteContactTarget} onClose={() => setDeleteContactTarget(null)} onDelete={deleteContact} /> : null}

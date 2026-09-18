@@ -91,6 +91,17 @@ export async function createEntry(entry: LedgerEntry, uid: string) {
   })
 }
 
+export async function updateEntry(entry: LedgerEntry) {
+  await updateDoc(doc(requireDatabase(), 'ledgerEntries', entry.id), {
+    amount: entry.amount,
+    occasion: entry.occasion,
+    method: entry.method,
+    date: entry.date,
+    ...(entry.screenshots?.length ? { screenshots: entry.screenshots } : {}),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export async function settleEntry(entryId: string, uid: string) {
   const database = requireDatabase()
   const entryRef = doc(database, 'ledgerEntries', entryId)
