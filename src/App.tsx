@@ -413,7 +413,7 @@ function LoginScreen({
             <span>TallyBack</span>
           </div>
           {confirmation ? <p className="login-step">Check your messages</p> : null}
-          {confirmation ? <h2>Enter your code.</h2> : null}
+          <h2>{confirmation ? 'Enter your code.' : 'Know what you owe—and what you’re owed.'}</h2>
           <p className="login-subtitle">
             {confirmation
               ? `We sent a 6-digit verification code to +91 ${phone.slice(0, 5)} ${phone.slice(5)}.`
