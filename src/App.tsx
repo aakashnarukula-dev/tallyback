@@ -417,7 +417,7 @@ function LoginScreen({
           <p className="login-subtitle">
             {confirmation
               ? `We sent a 6-digit verification code to +91 ${phone.slice(0, 5)} ${phone.slice(5)}.`
-              : 'Log all payments from people who owe you, and see people you owe.'}
+              : 'Track money people owe you and see how much you need to pay others.'}
           </p>
           <label>
             Mobile number
