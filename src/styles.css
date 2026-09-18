@@ -2209,6 +2209,12 @@ a {
   color: #a63f38;
 }
 
+.drawer-entry-actions .entry-split-action {
+  margin-left: auto;
+  background: #eef1f7;
+  color: #596175;
+}
+
 .drawer-entry .ledger-proof-block {
   grid-column: 1 / -1;
 }

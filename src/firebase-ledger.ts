@@ -6,12 +6,13 @@ import {
   onSnapshot,
   or,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore'
-import { LedgerEntry, Person } from './data'
+import { getSplitLedgerReference, LedgerEntry, Person } from './data'
 import { db } from './firebase'
 
 export const toE164 = (phone: string) => {
@@ -90,11 +91,45 @@ export async function createEntry(entry: LedgerEntry, uid: string) {
   })
 }
 
-export async function settleEntry(entryId: string) {
-  await updateDoc(doc(requireDatabase(), 'ledgerEntries', entryId), {
-    status: 'settled',
-    settledAt: new Date().toISOString(),
-    updatedAt: serverTimestamp(),
+export async function settleEntry(entryId: string, uid: string) {
+  const database = requireDatabase()
+  const entryRef = doc(database, 'ledgerEntries', entryId)
+  const splitReference = getSplitLedgerReference(entryId)
+  const settledAt = new Date().toISOString()
+
+  if (!splitReference) {
+    await updateDoc(entryRef, {
+      status: 'settled',
+      settledAt,
+      updatedAt: serverTimestamp(),
+    })
+    return
+  }
+
+  const pageRef = doc(database, 'splitPages', splitReference.splitId)
+  await runTransaction(database, async (transaction) => {
+    const pageSnapshot = await transaction.get(pageRef)
+    if (!pageSnapshot.exists()) {
+      transaction.update(entryRef, { status: 'settled', settledAt, updatedAt: serverTimestamp() })
+      return
+    }
+
+    const page = pageSnapshot.data() as {
+      ownerUid: string
+      recipients: Array<{ id: string; status: 'pending' | 'paid'; paidAt?: string }>
+    }
+    if (page.ownerUid !== uid) throw new Error('Only the split owner can mark this due paid.')
+    if (!page.recipients.some((recipient) => recipient.id === splitReference.recipientId)) {
+      throw new Error('Matching split member was not found.')
+    }
+
+    transaction.update(pageRef, {
+      recipients: page.recipients.map((recipient) => recipient.id === splitReference.recipientId
+        ? { ...recipient, status: 'paid', paidAt: settledAt }
+        : recipient),
+      updatedAt: serverTimestamp(),
+    })
+    transaction.update(entryRef, { status: 'settled', settledAt, updatedAt: serverTimestamp() })
   })
 }
 

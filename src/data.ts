@@ -36,6 +36,21 @@ export type LedgerEntry = {
   screenshots?: PaymentScreenshot[]
 }
 
+export type SplitLedgerReference = {
+  splitId: string
+  recipientId: string
+}
+
+export const getSplitLedgerReference = (entryId: string): SplitLedgerReference | null => {
+  if (!entryId.startsWith('split-')) return null
+  const recipientMarker = entryId.lastIndexOf('-member-')
+  if (recipientMarker <= 'split-'.length) return null
+  return {
+    splitId: entryId.slice('split-'.length, recipientMarker),
+    recipientId: entryId.slice(recipientMarker + 1),
+  }
+}
+
 export type ReviewKind = 'amount' | 'paid'
 
 export type LedgerReview = {

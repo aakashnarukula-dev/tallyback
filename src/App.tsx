@@ -33,12 +33,12 @@ import {
   Split,
   Smartphone,
   Trash2,
-  UsersRound,
   WalletCards,
   X,
 } from 'lucide-react'
 import {
   avatarColor,
+  getSplitLedgerReference,
   initials,
   LedgerEntry,
   LedgerReview,
@@ -1047,6 +1047,7 @@ function PersonDrawer({
   onClose,
   onAddDue,
   onDeleteDue,
+  onOpenSplit,
   onSettle,
   onRequestReview,
   onResolveReview,
@@ -1058,6 +1059,7 @@ function PersonDrawer({
   onClose: () => void
   onAddDue: (person: Person) => void
   onDeleteDue: (entry: LedgerEntry) => void
+  onOpenSplit: () => void
   onSettle: (id: string) => void
   onRequestReview: (entry: LedgerEntry) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
@@ -1108,14 +1110,15 @@ function PersonDrawer({
           ) : null}
           <div className="drawer-entry-list">
             {openDueEntries.map((entry) => {
-              const Icon = methodIcons[entry.method]
-              const review = pendingReviews.get(entry.id)
-              return (
+            const Icon = methodIcons[entry.method]
+            const review = pendingReviews.get(entry.id)
+            const splitReference = getSplitLedgerReference(entry.id)
+            return (
                 <article className="drawer-entry" key={entry.id}>
                   <span className="method-icon"><Icon size={17} /></span>
                   <div className="drawer-entry-copy">
                     <h4>{entry.occasion}</h4>
-                    <p>{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
+                    <p>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
                   </div>
                   <strong className="drawer-entry-amount">{money.format(entry.amount)}</strong>
                   {entry.screenshots?.length ? (
@@ -1145,7 +1148,9 @@ function PersonDrawer({
                   {direction === 'receivable' ? (
                     <div className="drawer-entry-actions">
                       {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button> : null}
-                      <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete due</button>
+                      {splitReference
+                        ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
+                        : <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete due</button>}
                     </div>
                   ) : !review ? (
                     <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
@@ -1412,7 +1417,8 @@ function TallyBackApp() {
 
   async function markEntrySettled(id: string) {
     try {
-      await settleFirebaseEntry(id)
+      if (!auth?.currentUser) throw new Error('Sign in required')
+      await settleFirebaseEntry(id, auth.currentUser.uid)
       setToast('Marked as paid.')
     } catch {
       setToast('Could not update this entry. Please try again.')
@@ -1420,6 +1426,7 @@ function TallyBackApp() {
   }
 
   async function deleteDue(entry: LedgerEntry) {
+    if (getSplitLedgerReference(entry.id)) throw new Error('Manage split dues from Splits.')
     await deleteFirebaseEntry(entry.id)
 
     if (entry.screenshots?.length) {
@@ -1547,13 +1554,13 @@ function TallyBackApp() {
         </a>
         <nav className="side-nav" aria-label="Primary navigation">
           <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}>
-            <UsersRound size={19} /> People
+            <ReceiptText size={19} /> Dues
+          </button>
+          <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}>
+            <Split size={19} /> Splits
           </button>
           <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}>
             <History size={19} /> Activity
-          </button>
-          <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}>
-            <Split size={19} /> Split payments
           </button>
         </nav>
         <div className="sidebar-card">
@@ -1603,7 +1610,7 @@ function TallyBackApp() {
               <section className="people-workspace">
                 <header className="people-hero">
                   <div>
-                    <p>Personal ledgers</p>
+                    <p>Dues</p>
                     <h1>Money lives with people.</h1>
                   </div>
                   <button
@@ -1631,7 +1638,7 @@ function TallyBackApp() {
 
                 <div className="people-toolbar">
                   <div>
-                    <h2>{direction === 'receivable' ? 'Your people' : 'People you owe'}</h2>
+                    <h2>{direction === 'receivable' ? 'Dues by person' : 'Your dues'}</h2>
                     <p>{direction === 'receivable' ? `${allSummaries.length} saved ${allSummaries.length === 1 ? 'person' : 'people'}` : `${openEntries} open ${openEntries === 1 ? 'due' : 'dues'}`}</p>
                   </div>
                   <div className="people-toolbar-actions">
@@ -1705,7 +1712,7 @@ function TallyBackApp() {
                         </span>
                         <div>
                           <h3>{entry.occasion}</h3>
-                          <p>{person.name} · {entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</p>
+                          <p>{person.name} · {getSplitLedgerReference(entry.id) ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</p>
                         </div>
                         <div className="activity-amount">
                           <strong>{money.format(entry.amount)}</strong>
@@ -1727,9 +1734,9 @@ function TallyBackApp() {
       </main>
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><UsersRound size={20} /><span>People</span></button>
-        <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}><History size={20} /><span>Activity</span></button>
+        <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><ReceiptText size={20} /><span>Dues</span></button>
         <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}><Split size={20} /><span>Splits</span></button>
+        <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}><History size={20} /><span>Activity</span></button>
       </nav>
 
       {showAddPerson ? <AddPersonModal onClose={() => setShowAddPerson(false)} onSave={addManualContact} onImport={importDeviceContacts} contactPickerAvailable={contactPickerAvailable} /> : null}
@@ -1741,6 +1748,10 @@ function TallyBackApp() {
         onClose={() => setSelectedPhone(null)}
         onAddDue={startAddDue}
         onDeleteDue={setDeleteEntryTarget}
+        onOpenSplit={() => {
+          setSelectedPhone(null)
+          setView('splits')
+        }}
         onSettle={markEntrySettled}
         onRequestReview={setReviewEntry}
         onResolveReview={resolveReview}

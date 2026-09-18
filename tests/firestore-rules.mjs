@@ -12,6 +12,7 @@ import {
   getDocs,
   or,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   where,
@@ -94,6 +95,55 @@ try {
     updatedAt: serverTimestamp(),
   }))
 
+  const splitId = 'goa-trip-unit123'
+  const recipientId = 'member-unit123'
+  const splitEntryId = `split-${splitId}-${recipientId}`
+  await assertSucceeds(setDoc(doc(truecallerDatabase, 'splitPages', splitId), {
+    title: 'Goa trip',
+    description: 'Shared travel costs',
+    active: true,
+    currency: 'INR',
+    ownerUid: uid,
+    ownerName: 'Aakash Work',
+    recipients: [{ id: recipientId, name: 'Aakash 2', amount: 500, status: 'pending', ledgerEntryId: splitEntryId }],
+    totalAmount: 500,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }))
+  await assertSucceeds(setDoc(doc(truecallerDatabase, 'ledgerEntries', splitEntryId), {
+    lender: { name: 'Aakash Work', phone },
+    borrower: { name: 'Aakash 2', phone: otherPhone },
+    lenderPhone: phone,
+    borrowerPhone: otherPhone,
+    participantPhones: [phone, otherPhone],
+    amount: 500,
+    occasion: 'Goa trip',
+    method: 'Personal funds',
+    date: '2026-09-19',
+    status: 'open',
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }))
+  await assertSucceeds(runTransaction(truecallerDatabase, async (transaction) => {
+    const pageRef = doc(truecallerDatabase, 'splitPages', splitId)
+    const pageSnapshot = await transaction.get(pageRef)
+    const page = pageSnapshot.data()
+    const paidAt = new Date().toISOString()
+    transaction.update(pageRef, {
+      recipients: page.recipients.map((recipient) => recipient.id === recipientId
+        ? { ...recipient, status: 'paid', paidAt }
+        : recipient),
+      updatedAt: serverTimestamp(),
+    })
+    transaction.update(doc(truecallerDatabase, 'ledgerEntries', splitEntryId), {
+      status: 'settled',
+      settledAt: paidAt,
+      updatedAt: serverTimestamp(),
+    })
+  }))
+  await assertFails(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', splitEntryId)))
+
   const attachmentEntry = {
     lender: { name: 'Aakash Work', phone },
     borrower: { name: 'Aakash 2', phone: otherPhone },
@@ -131,6 +181,7 @@ try {
     ),
   )
   await assertSucceeds(getDocs(smsQuery))
+  await assertSucceeds(getDoc(doc(smsDatabase, 'ledgerEntries', splitEntryId)))
 
   const strangerDatabase = testEnvironment
     .authenticatedContext('stranger', { verifiedPhone: '+919999999999' })
@@ -193,7 +244,7 @@ try {
   await assertFails(deleteDoc(doc(smsDatabase, 'ledgerEntries', 'saved-entry')))
   await assertSucceeds(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', 'saved-entry')))
 
-  console.log('Firestore and Storage rules: private contacts, participant ledgers, creator-only deletion, and payment proofs passed.')
+  console.log('Firestore and Storage rules: private contacts, unified split dues, participant ledgers, creator-only deletion, and payment proofs passed.')
 } finally {
   await testEnvironment.cleanup()
 }

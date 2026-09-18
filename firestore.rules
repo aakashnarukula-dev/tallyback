@@ -267,7 +267,8 @@ service cloud.firestore {
       allow read: if isParticipant(resource.data);
       allow delete: if isParticipant(resource.data)
         && request.auth.uid == resource.data.createdBy
-        && resource.data.lenderPhone == phone();
+        && resource.data.lenderPhone == phone()
+        && !entryId.matches('^split-.*');
       allow create: if validEntry(request.resource.data)
         && isParticipant(request.resource.data)
         && !request.resource.data.keys().hasAny(['review'])

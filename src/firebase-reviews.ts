@@ -1,10 +1,11 @@
 import {
   deleteField,
   doc,
+  runTransaction,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
-import { LedgerEntry, LedgerReview, ReviewKind } from './data'
+import { getSplitLedgerReference, LedgerEntry, LedgerReview, ReviewKind } from './data'
 import { db } from './firebase'
 import { toE164 } from './firebase-ledger'
 
@@ -43,6 +44,7 @@ export async function resolveReviewRequest(
   decision: 'approved' | 'rejected',
 ) {
   const database = requireDatabase()
+  const entryRef = doc(database, 'ledgerEntries', entry.id)
   const updates: Record<string, unknown> = {
     review: deleteField(),
     updatedAt: serverTimestamp(),
@@ -57,5 +59,45 @@ export async function resolveReviewRequest(
     }
   }
 
-  await updateDoc(doc(database, 'ledgerEntries', entry.id), updates)
+  const splitReference = decision === 'approved' ? getSplitLedgerReference(entry.id) : null
+  if (!splitReference) {
+    await updateDoc(entryRef, updates)
+    return
+  }
+
+  const pageRef = doc(database, 'splitPages', splitReference.splitId)
+  await runTransaction(database, async (transaction) => {
+    const pageSnapshot = await transaction.get(pageRef)
+    if (!pageSnapshot.exists()) {
+      transaction.update(entryRef, updates)
+      return
+    }
+
+    const page = pageSnapshot.data() as {
+      recipients: Array<{ id: string; amount: number; status: 'pending' | 'paid'; paidAt?: string }>
+    }
+    const matchingRecipient = page.recipients.find((recipient) => recipient.id === splitReference.recipientId)
+    if (!matchingRecipient) throw new Error('Matching split member was not found.')
+
+    if (review.kind === 'amount') {
+      transaction.update(pageRef, {
+        recipients: page.recipients.map((recipient) => recipient.id === splitReference.recipientId
+          ? { ...recipient, amount: review.proposedAmount }
+          : recipient),
+        totalAmount: page.recipients.reduce((sum, recipient) => (
+          sum + (recipient.id === splitReference.recipientId ? review.proposedAmount : recipient.amount)
+        ), 0),
+        updatedAt: serverTimestamp(),
+      })
+    } else {
+      const paidAt = String(updates.settledAt)
+      transaction.update(pageRef, {
+        recipients: page.recipients.map((recipient) => recipient.id === splitReference.recipientId
+          ? { ...recipient, status: 'paid', paidAt }
+          : recipient),
+        updatedAt: serverTimestamp(),
+      })
+    }
+    transaction.update(entryRef, updates)
+  })
 }
