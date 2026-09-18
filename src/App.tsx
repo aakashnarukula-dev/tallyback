@@ -152,7 +152,7 @@ function BrandMark() {
 
 function formatPhone(phone: string) {
   const clean = normalizePhone(phone)
-  return clean.length === 10 ? `+91 ${clean.slice(0, 5)} ${clean.slice(5)}` : phone
+  return clean.length === 10 ? clean : phone
 }
 
 let recaptchaVerifier: RecaptchaVerifier | null = null
