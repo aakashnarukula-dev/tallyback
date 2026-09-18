@@ -5,13 +5,16 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'
-import { getSplitLedgerReference, LedgerEntry, LedgerReview, ReviewKind } from './data'
+import { getSplitLedgerReference, LedgerEntry, LedgerReview, PaymentMethod, ReviewKind } from './data'
 import { db } from './firebase'
 import { toE164 } from './firebase-ledger'
 
 export type ReviewDraft = {
   kind: ReviewKind
   proposedAmount: number
+  proposedMethod: PaymentMethod
+  proposedOccasion: string
+  proposedDate: string
   note: string
 }
 
@@ -29,6 +32,9 @@ export async function createReviewRequest(entry: LedgerEntry, uid: string, draft
       requestedByPhone: borrowerPhone,
       kind: draft.kind,
       proposedAmount: draft.kind === 'amount' ? draft.proposedAmount : 0,
+      proposedMethod: draft.proposedMethod,
+      proposedOccasion: draft.proposedOccasion.trim().slice(0, 80),
+      proposedDate: draft.proposedDate,
       note: draft.note.trim().slice(0, 280),
       status: 'pending',
       createdAt: serverTimestamp(),
@@ -53,6 +59,9 @@ export async function resolveReviewRequest(
   if (decision === 'approved') {
     if (review.kind === 'amount') {
       updates.amount = review.proposedAmount
+      if (review.proposedMethod) updates.method = review.proposedMethod
+      if (review.proposedOccasion) updates.occasion = review.proposedOccasion
+      if (review.proposedDate) updates.date = review.proposedDate
     } else {
       updates.status = 'settled'
       updates.settledAt = new Date().toISOString()

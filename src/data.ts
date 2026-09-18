@@ -58,6 +58,9 @@ export type LedgerReview = {
   requestedByPhone: string
   kind: ReviewKind
   proposedAmount: number
+  proposedMethod?: PaymentMethod
+  proposedOccasion?: string
+  proposedDate?: string
   note: string
   status: 'pending'
   createdAt?: unknown

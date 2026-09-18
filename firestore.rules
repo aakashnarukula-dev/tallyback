@@ -36,6 +36,9 @@ service cloud.firestore {
           'requestedByPhone',
           'kind',
           'proposedAmount',
+          'proposedMethod',
+          'proposedOccasion',
+          'proposedDate',
           'note',
           'status',
           'createdAt',
@@ -46,6 +49,9 @@ service cloud.firestore {
           'requestedByPhone',
           'kind',
           'proposedAmount',
+          'proposedMethod',
+          'proposedOccasion',
+          'proposedDate',
           'note',
           'status',
           'createdAt',
@@ -56,6 +62,12 @@ service cloud.firestore {
         && review.requestedByPhone == entry.borrowerPhone
         && review.kind in ['amount', 'paid']
         && review.proposedAmount is number
+        && review.proposedMethod in ['UPI', 'Credit card', 'Cash', 'Bank transfer', 'Personal funds']
+        && review.proposedOccasion is string
+        && review.proposedOccasion.size() > 0
+        && review.proposedOccasion.size() <= 80
+        && review.proposedDate is string
+        && review.proposedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && (
           (review.kind == 'amount' && review.proposedAmount > 0)
           || (review.kind == 'paid' && review.proposedAmount == 0)
@@ -338,8 +350,30 @@ service cloud.firestore {
                 resource.data.review.kind == 'amount'
                 && request.resource.data.status == 'open'
                 && request.resource.data.amount == resource.data.review.proposedAmount
-                && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['amount', 'review', 'updatedAt'])
+                && (
+                  (
+                    resource.data.review.keys().hasAll([
+                      'proposedMethod',
+                      'proposedOccasion',
+                      'proposedDate'
+                    ])
+                    && request.resource.data.method == resource.data.review.proposedMethod
+                    && request.resource.data.occasion == resource.data.review.proposedOccasion
+                    && request.resource.data.date == resource.data.review.proposedDate
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['amount', 'method', 'occasion', 'date', 'review', 'updatedAt'])
+                  )
+                  ||
+                  (
+                    !resource.data.review.keys().hasAny([
+                      'proposedMethod',
+                      'proposedOccasion',
+                      'proposedDate'
+                    ])
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['amount', 'review', 'updatedAt'])
+                  )
+                )
               )
               ||
               (

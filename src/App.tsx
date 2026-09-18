@@ -1387,6 +1387,9 @@ function ReviewRequestModal({
 }) {
   const [kind, setKind] = useState<ReviewDraft['kind']>('amount')
   const [amount, setAmount] = useState(String(entry.amount))
+  const [method, setMethod] = useState<PaymentMethod>(entry.method)
+  const [occasion, setOccasion] = useState(entry.occasion)
+  const [date, setDate] = useState(entry.date)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
@@ -1398,15 +1401,36 @@ function ReviewRequestModal({
       setError('Enter the amount you believe is correct.')
       return
     }
-    if (kind === 'amount' && proposedAmount === entry.amount) {
-      setError('Enter an amount different from the current record.')
+    if (kind === 'amount' && !occasion.trim()) {
+      setError('Enter what the payment was for.')
+      return
+    }
+    if (kind === 'amount' && !date) {
+      setError('Choose the correct date.')
+      return
+    }
+    if (
+      kind === 'amount'
+      && proposedAmount === entry.amount
+      && method === entry.method
+      && occasion.trim() === entry.occasion
+      && date === entry.date
+    ) {
+      setError('Change at least one detail before sending for review.')
       return
     }
 
     try {
       setWorking(true)
       setError('')
-      await onSend({ kind, proposedAmount, note })
+      await onSend({
+        kind,
+        proposedAmount,
+        proposedMethod: method,
+        proposedOccasion: occasion.trim(),
+        proposedDate: date,
+        note,
+      })
       onClose()
     } catch {
       setError('Could not send this review request. Please try again.')
@@ -1444,7 +1468,7 @@ function ReviewRequestModal({
           <div className="review-reason-picker" aria-label="Choose what is incorrect">
             <button type="button" className={kind === 'amount' ? 'active' : ''} aria-pressed={kind === 'amount'} onClick={() => setKind('amount')}>
               <Banknote size={18} />
-              <span><strong>Wrong amount</strong><small>Suggest the correct amount</small></span>
+              <span><strong>Wrong details</strong><small>Suggest the correct due details</small></span>
               {kind === 'amount' ? <Check size={17} /> : null}
             </button>
             <button type="button" className={kind === 'paid' ? 'active' : ''} aria-pressed={kind === 'paid'} onClick={() => setKind('paid')}>
@@ -1455,18 +1479,34 @@ function ReviewRequestModal({
           </div>
 
           {kind === 'amount' ? (
-            <label className="review-field">
-              Correct amount
-              <div className="money-input">
-                <span>₹</span>
-                <input
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
-                  inputMode="decimal"
-                  autoFocus
-                />
+            <div className="review-details-grid">
+              <label className="review-detail-field">
+                Amount
+                <div className="money-input">
+                  <span>₹</span>
+                  <input
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
+                    inputMode="decimal"
+                    autoFocus
+                  />
+                </div>
+              </label>
+              <label className="review-detail-field">
+                Paid using
+                <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
+                  {methods.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="review-detail-field">
+                What was it for?
+                <input value={occasion} onChange={(event) => setOccasion(event.target.value)} />
+              </label>
+              <div className="review-detail-field form-field">
+                <span>Date</span>
+                <DatePicker value={date} onChange={setDate} />
               </div>
-            </label>
+            </div>
           ) : null}
 
           <label className="review-field">
@@ -1764,7 +1804,7 @@ function PersonDrawer({
                         <span className="review-status"><Flag size={13} /> Review pending</span>
                         <strong>
                           {review.kind === 'amount'
-                            ? `${entry.borrower.name} says the amount should be ${money.format(review.proposedAmount)}.`
+                            ? `${entry.borrower.name} requested changes to this due.`
                             : `${entry.borrower.name} says this has already been paid.`}
                         </strong>
                         {review.note ? <p>“{review.note}”</p> : null}
@@ -1773,7 +1813,7 @@ function PersonDrawer({
                         <div className="review-actions">
                           <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
                           <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'approved')}>
-                            {review.kind === 'amount' ? 'Use new amount' : 'Confirm paid'}
+                            {review.kind === 'amount' ? 'Apply changes' : 'Confirm paid'}
                           </button>
                         </div>
                       ) : <small>Waiting for {entry.lender.name} to review this.</small>}
