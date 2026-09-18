@@ -669,10 +669,71 @@ function AddEntryModal({
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null)
   const screenshotInput = useRef<HTMLInputElement | null>(null)
   const previewUrls = useRef(new Set<string>())
+  const sheetRef = useRef<HTMLElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const dragStartRef = useRef({ y: 0, time: 0 })
+  const dragYRef = useRef(0)
+  const savingRef = useRef(false)
+  const closingRef = useRef(false)
+  const [dragY, setDragY] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const [closing, setClosing] = useState(false)
 
-  useEffect(() => () => {
-    previewUrls.current.forEach((url) => URL.revokeObjectURL(url))
-    previewUrls.current.clear()
+  savingRef.current = saving
+
+  function closeSheet(force = false) {
+    if (closingRef.current || (savingRef.current && !force)) return
+    closingRef.current = true
+    setClosing(true)
+    setDragging(false)
+    closeTimerRef.current = window.setTimeout(onClose, 240)
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || closingRef.current || savingRef.current) return
+    dragStartRef.current = { y: event.clientY, time: performance.now() }
+    dragYRef.current = 0
+    setDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    const nextDragY = Math.max(0, event.clientY - dragStartRef.current.y)
+    dragYRef.current = nextDragY
+    setDragY(nextDragY)
+  }
+
+  function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    const elapsed = Math.max(performance.now() - dragStartRef.current.time, 1)
+    const velocity = dragYRef.current / elapsed
+    if (dragYRef.current > Math.min(130, window.innerHeight * 0.16) || (dragYRef.current > 28 && velocity > 0.55)) {
+      closeSheet()
+      return
+    }
+    dragYRef.current = 0
+    setDragging(false)
+    setDragY(0)
+  }
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSheet()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+      previewUrls.current.forEach((url) => URL.revokeObjectURL(url))
+      previewUrls.current.clear()
+    }
   }, [])
 
   function addScreenshots(event: ChangeEvent<HTMLInputElement>) {
@@ -740,6 +801,11 @@ function AddEntryModal({
       return
     }
 
+    if (!screenshots.length) {
+      setError('Add at least one payment screenshot.')
+      return
+    }
+
     if (!auth?.currentUser) {
       setError('Sign in again before saving this entry.')
       return
@@ -788,20 +854,34 @@ function AddEntryModal({
     : 'Save entry'
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!saving) onClose() }}>
+    <div
+      className={`modal-backdrop add-entry-backdrop ${closing ? 'closing' : ''}`}
+      role="presentation"
+      onPointerDown={(event) => { if (event.target === event.currentTarget) closeSheet() }}
+    >
       <section
-        className="modal-card add-entry-modal"
+        ref={sheetRef}
+        className={`modal-card add-entry-modal ${dragging ? 'dragging' : ''} ${closing ? 'closing' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-entry-title"
-        onMouseDown={(event) => event.stopPropagation()}
+        style={{ '--sheet-drag-y': `${dragY}px` } as CSSProperties}
+        onPointerDown={(event) => event.stopPropagation()}
       >
-        <span className="sheet-grabber" aria-hidden="true" />
+        <button
+          className="add-entry-grabber"
+          type="button"
+          aria-label="Drag down to close add due"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+        ><span /></button>
         <div className="modal-header add-entry-header">
           <div>
             <h2 id="add-entry-title">Add due</h2>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={saving}>
+          <button className="icon-button" type="button" onClick={() => closeSheet()} aria-label="Close dialog" disabled={saving}>
             <X size={20} />
           </button>
         </div>
@@ -842,7 +922,7 @@ function AddEntryModal({
               <div className="payment-upload-heading">
                 <div>
                   <strong id="payment-upload-title">Payment screenshots</strong>
-                  <span>Optional · up to 5 images, 6 MB each</span>
+                  <span>Required · 1–5 images, 6 MB each</span>
                 </div>
                 <button
                   className="payment-upload-button"
@@ -886,7 +966,7 @@ function AddEntryModal({
             {error && <p className="form-error">{error}</p>}
           </div>
           <div className="modal-actions add-entry-actions">
-            <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="secondary-button" type="button" onClick={() => closeSheet()} disabled={saving}>Cancel</button>
             <button className="primary-button" type="submit" disabled={saving}>
               {saving ? <LoaderCircle className="spin" size={16} /> : null}
               {saveLabel}
@@ -1134,7 +1214,7 @@ function DeleteDueModal({
           {error ? <p className="form-error">{error}</p> : null}
           <div className="modal-actions">
             <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Keep due</button>
-            <button className="danger-button" type="submit" disabled={working}>{working ? 'Deleting…' : 'Delete due'}</button>
+            <button className="danger-button" type="submit" disabled={working}>{working ? 'Deleting…' : 'Delete'}</button>
           </div>
         </form>
       </section>
@@ -1371,10 +1451,10 @@ function PersonDrawer({
                   ) : null}
                   {direction === 'receivable' ? (
                     <div className="drawer-entry-actions">
-                      {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button> : null}
+                      {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark as paid</button> : null}
                       {splitReference
                         ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
-                        : <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete due</button>}
+                        : <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button>}
                     </div>
                   ) : !review ? (
                     <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>

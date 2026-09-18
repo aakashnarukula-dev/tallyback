@@ -221,7 +221,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
                     {row.status === 'paid'
                       ? <span className="split-paid-pill"><Check size={13} /> Paid</span>
                       : selectedId
-                        ? <button className="split-mark-button" type="button" onClick={() => markPaid(row.id)}><CheckCircle2 size={14} /> Mark paid</button>
+                        ? <button className="split-mark-button" type="button" onClick={() => markPaid(row.id)}><CheckCircle2 size={14} /> Mark as paid</button>
                         : <span className="split-pending-pill">Pending</span>}
                     {row.status !== 'paid' && draft.recipients.length > 1 && (
                       <button className="split-remove-button" type="button" aria-label={`Remove ${row.name || 'member'}`} onClick={() => setDraft((current) => ({ ...current, recipients: current.recipients.filter((item) => item.id !== row.id) }))}><Trash2 size={15} /></button>

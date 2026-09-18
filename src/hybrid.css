@@ -864,6 +864,85 @@ textarea:focus-visible {
   box-shadow: none;
 }
 
+/* Fields keep their resting border while focused. Cursor remains the focus cue. */
+input:focus,
+textarea:focus,
+select:focus,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.form-grid > label > input:focus,
+.form-grid > label > textarea:focus,
+.person-form-grid > label > input:focus,
+.review-field input:focus,
+.review-field textarea:focus,
+.split-form-card > label > input:focus,
+.split-form-card > label > textarea:focus,
+.people-search:focus-within,
+.input-shell:focus-within,
+.phone-input:focus-within,
+.money-input:focus-within,
+.person-form-grid .phone-input:focus-within,
+.split-member-phone:focus-within,
+.split-member-amount:focus-within {
+  outline: none !important;
+  border-color: var(--line) !important;
+  box-shadow: none !important;
+}
+
+.add-entry-backdrop {
+  transition: opacity 220ms ease;
+}
+
+.add-entry-backdrop.closing {
+  opacity: 0;
+}
+
+.modal-card.add-entry-modal {
+  transform: translateY(var(--sheet-drag-y, 0));
+  transition: transform 240ms cubic-bezier(0.2, 0.9, 0.25, 1);
+  animation: sheet-in 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.add-entry-modal.dragging {
+  transition: none;
+}
+
+.add-entry-modal.closing {
+  animation: none;
+  transform: translateY(105%);
+  transition: transform 240ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.add-entry-grabber {
+  width: 100%;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.add-entry-grabber:active {
+  cursor: grabbing;
+}
+
+.add-entry-grabber span {
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: #b9cdc8;
+}
+
 @media (max-width: 860px) {
   .topbar {
     background: rgba(242, 246, 245, 0.94);
