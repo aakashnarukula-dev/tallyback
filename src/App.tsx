@@ -474,9 +474,6 @@ function LoginScreen({
               {working ? 'Please wait…' : 'Text me a code'}
             </button>
           )}
-          <p className="login-fine-print">
-            Truecaller verifies your number without an OTP on supported Android devices. SMS is available as a secure fallback.
-          </p>
           <div id="recaptcha-container" />
         </form>
       </section>
