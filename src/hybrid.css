@@ -288,6 +288,7 @@ textarea:focus-visible {
 }
 
 .add-person-inline {
+  height: 43px;
   min-height: 43px;
   flex: 0 0 auto;
   display: inline-flex;
@@ -300,11 +301,19 @@ textarea:focus-visible {
   background: var(--indigo);
   color: #fff;
   font: inherit;
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
   box-shadow: 0 8px 18px rgba(57, 121, 108, 0.16);
   cursor: pointer;
   transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+@media (max-width: 860px) {
+  .add-person-inline {
+    height: 42px;
+    min-height: 42px;
+  }
 }
 
 .add-person-inline:hover {
