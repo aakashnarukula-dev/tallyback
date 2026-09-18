@@ -828,6 +828,22 @@ textarea:focus-visible {
   flex: 0 0 auto;
 }
 
+.split-editor .split-form-card input:focus,
+.split-editor .split-form-card textarea:focus,
+.split-editor .split-member-phone:focus-within,
+.split-editor .split-member-amount:focus-within {
+  outline: none;
+  border-color: #659589;
+  box-shadow: none;
+}
+
+.split-editor .split-member-phone input:focus,
+.split-editor .split-member-amount input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 @media (max-width: 860px) {
   .topbar {
     background: rgba(242, 246, 245, 0.94);
