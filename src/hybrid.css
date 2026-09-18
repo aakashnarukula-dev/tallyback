@@ -306,7 +306,6 @@ textarea:focus-visible {
   white-space: nowrap;
   box-shadow: 0 8px 18px rgba(57, 121, 108, 0.16);
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 @media (max-width: 860px) {
@@ -318,8 +317,6 @@ textarea:focus-visible {
 
 .add-person-inline:hover {
   background: var(--indigo-dark);
-  transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(57, 121, 108, 0.2);
 }
 
 .add-person-inline:disabled {
