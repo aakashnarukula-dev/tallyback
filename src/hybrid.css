@@ -1376,6 +1376,72 @@ select:focus-visible {
   }
 }
 
+body:has(.ledger-view-shell) {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.ledger-view-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.ledger-view-shell .main-content {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ledger-view-shell .topbar {
+  flex: 0 0 auto;
+}
+
+.ledger-view-shell .workspace {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ledger-view-shell .ledger-column,
+.ledger-view-shell .people-workspace {
+  height: 100%;
+  min-height: 0;
+}
+
+.ledger-view-shell .people-workspace {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ledger-view-shell .people-balance-switch,
+.ledger-view-shell .people-toolbar {
+  flex: 0 0 auto;
+}
+
+.ledger-view-shell .contact-ledger-grid {
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 3px 12px 2px;
+}
+
+@media (max-width: 860px) {
+  .ledger-view-shell .workspace {
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -2244,7 +2244,7 @@ function TallyBackApp() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${view === 'ledger' ? 'ledger-view-shell' : ''}`}>
       <aside className="sidebar">
         <a className="brand" href="#" aria-label="TallyBack home">
           <BrandMark />
