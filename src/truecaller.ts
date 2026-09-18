@@ -170,6 +170,7 @@ export async function signInWithTruecaller({
       const result = await response.json().catch(() => ({})) as TruecallerStatus
 
       if (result.status === 'ready' && result.customToken) {
+        if (signal?.aborted) throw abortError()
         rememberTruecallerDevice()
         const credential = await signInWithCustomToken(auth, result.customToken)
         return { user: credential.user, profile: result.profile || {} }

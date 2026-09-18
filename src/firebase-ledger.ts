@@ -74,8 +74,11 @@ export async function createEntry(entry: LedgerEntry, uid: string) {
   const borrowerPhone = toE164(entry.borrower.phone)
 
   await setDoc(doc(requireDatabase(), 'ledgerEntries', entry.id), {
-    lender: { ...entry.lender, phone: lenderPhone },
-    borrower: { ...entry.borrower, phone: borrowerPhone },
+    // Ledger participants are a public Firestore contract. Saved contacts also
+    // carry local-only metadata such as `source`, which the security rules
+    // intentionally reject. Whitelist the persisted fields at this boundary.
+    lender: { name: entry.lender.name, phone: lenderPhone },
+    borrower: { name: entry.borrower.name, phone: borrowerPhone },
     lenderPhone,
     borrowerPhone,
     participantPhones: [lenderPhone, borrowerPhone],

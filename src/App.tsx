@@ -5,6 +5,7 @@ import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
   signOut as signOutOfFirebase,
+  User,
 } from 'firebase/auth'
 import {
   AlertTriangle,
@@ -221,10 +222,21 @@ function firebaseErrorDetails(error: unknown) {
   }
 }
 
+async function getAuthenticatedPhone(user: User, forceRefresh = false) {
+  const tokenResult = await user.getIdTokenResult(forceRefresh)
+  const claimedPhone = typeof tokenResult.claims.phone_number === 'string'
+    ? tokenResult.claims.phone_number
+    : typeof tokenResult.claims.verifiedPhone === 'string'
+      ? tokenResult.claims.verifiedPhone
+      : ''
+  const phone = user.phoneNumber || claimedPhone
+  return normalizePhone(phone).length === 10 ? toE164(phone) : ''
+}
+
 function LoginScreen({
   onAuthenticated,
 }: {
-  onAuthenticated: (person: Person) => void
+  onAuthenticated: (uid: string, person: Person) => void
 }) {
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
@@ -277,7 +289,7 @@ function LoginScreen({
         phone: result.user.phoneNumber || toE164(result.profile.phone || ''),
       }
       await saveUserProfile(result.user.uid, person)
-      onAuthenticated(person)
+      onAuthenticated(result.user.uid, person)
     }).catch((truecallerError) => {
       if ((truecallerError as Error).name !== 'AbortError') {
         console.warn('Automatic Truecaller sign-in unavailable:', truecallerError)
@@ -300,7 +312,7 @@ function LoginScreen({
         phone: credential.user.phoneNumber ?? toE164(phone),
       }
       await saveUserProfile(credential.user.uid, person)
-      onAuthenticated(person)
+      onAuthenticated(credential.user.uid, person)
     }).catch((verificationError) => {
       setError(authErrorMessage(verificationError))
     }).finally(() => {
@@ -881,7 +893,12 @@ function AddEntryModal({
       setError('')
       // Refresh once before Storage so newly-created phone sessions carry the
       // latest claims and are not rejected by a stale cached ID token.
-      await auth.currentUser.getIdToken(true)
+      const authenticatedPhone = await getAuthenticatedPhone(auth.currentUser, true)
+      if (!authenticatedPhone || authenticatedPhone !== toE164(currentUser.phone)) {
+        const identityError = new Error('Authenticated phone does not match the active ledger.') as Error & { code: string }
+        identityError.code = 'auth/identity-mismatch'
+        throw identityError
+      }
       if (screenshots.length) {
         setUploadProgress({ completed: 0, total: screenshots.length })
         uploadedScreenshots = await uploadPaymentScreenshots(
@@ -918,9 +935,11 @@ function AddEntryModal({
         entryId,
         uid: auth.currentUser.uid,
       })
-      setError(saveStage === 'upload'
-        ? 'Could not upload the payment screenshot. Refresh once and try again.'
-        : `Could not ${entry ? 'update' : 'save'} this due. Refresh once and try again.`)
+      setError(details.code === 'auth/identity-mismatch'
+        ? 'Signed-in number changed. Close this sheet and try again.'
+        : saveStage === 'upload'
+          ? 'Could not upload the payment screenshot. Refresh once and try again.'
+          : `Could not ${entry ? 'update' : 'save'} this due. Refresh once and try again.`)
     } finally {
       setSaving(false)
       setUploadProgress(null)
@@ -1590,6 +1609,7 @@ function TallyBackApp() {
   const [toast, setToast] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
+  const authSyncVersion = useRef(0)
   const contactPickerAvailable = canPickDeviceContacts()
 
   useEffect(() => {
@@ -1597,8 +1617,10 @@ function TallyBackApp() {
       setAuthLoading(false)
       return
     }
+    const currentAuth = auth
 
-    return onAuthStateChanged(auth, async (firebaseUser) => {
+    return onAuthStateChanged(currentAuth, async (firebaseUser) => {
+      const syncVersion = ++authSyncVersion.current
       if (!firebaseUser) {
         setCurrentUser(null)
         setAuthLoading(false)
@@ -1607,13 +1629,21 @@ function TallyBackApp() {
 
       try {
         await ensureTruecallerLedgerClaim(firebaseUser)
+        const authenticatedPhone = await getAuthenticatedPhone(firebaseUser)
         const profile = await getUserProfile(firebaseUser.uid)
-        setCurrentUser(profile ?? {
+        if (syncVersion !== authSyncVersion.current || currentAuth.currentUser?.uid !== firebaseUser.uid) return
+        const matchingProfile = profile
+          && authenticatedPhone
+          && toE164(profile.phone) === authenticatedPhone
+          ? profile
+          : null
+        setCurrentUser(matchingProfile ? { ...matchingProfile, phone: authenticatedPhone } : {
           name: 'My account',
-          phone: firebaseUser.phoneNumber ?? '',
+          phone: authenticatedPhone,
         })
       } catch (error) {
         console.error('[auth/profile]', error)
+        if (syncVersion !== authSyncVersion.current || currentAuth.currentUser?.uid !== firebaseUser.uid) return
         setCurrentUser({
           name: 'My account',
           phone: firebaseUser.phoneNumber ?? '',
@@ -1799,8 +1829,12 @@ function TallyBackApp() {
     [relevantEntries],
   )
 
-  function loginToFirebase(person: Person) {
-    setCurrentUser(person)
+  function loginToFirebase(uid: string, person: Person) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser || firebaseUser.uid !== uid) return
+    const firebasePhone = firebaseUser.phoneNumber
+    if (firebasePhone && toE164(firebasePhone) !== toE164(person.phone)) return
+    setCurrentUser({ ...person, phone: firebasePhone || person.phone })
   }
 
   async function logout() {
