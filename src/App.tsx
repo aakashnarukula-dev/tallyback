@@ -671,7 +671,7 @@ function AddPersonModal({
           <div className="person-form-grid">
             <label>
               Contact name
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Surya" autoComplete="name" maxLength={120} autoFocus={!contactPickerAvailable} />
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Aakash" autoComplete="name" maxLength={120} autoFocus={!contactPickerAvailable} />
             </label>
             <label>
               Mobile number
