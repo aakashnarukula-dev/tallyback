@@ -1260,6 +1260,16 @@ function PaymentScreenshotGallery({
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [failedPaths, setFailedPaths] = useState<string[]>([])
   const [activeScreenshot, setActiveScreenshot] = useState<{ url: string; name: string } | null>(null)
+  const lightboxHistoryPushed = useRef(false)
+
+  function closeActiveScreenshot() {
+    if (lightboxHistoryPushed.current && window.history.state?.tallyBackScreenshot) {
+      window.history.back()
+      return
+    }
+    lightboxHistoryPushed.current = false
+    setActiveScreenshot(null)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -1286,11 +1296,26 @@ function PaymentScreenshotGallery({
 
   useEffect(() => {
     if (!activeScreenshot) return
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setActiveScreenshot(null)
+    window.history.pushState({ ...window.history.state, tallyBackScreenshot: true }, '', window.location.href)
+    lightboxHistoryPushed.current = true
+
+    function closeOnHistoryBack() {
+      lightboxHistoryPushed.current = false
+      setActiveScreenshot(null)
     }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') closeActiveScreenshot()
+    }
+    window.addEventListener('popstate', closeOnHistoryBack)
     window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('popstate', closeOnHistoryBack)
+      window.removeEventListener('keydown', closeOnEscape)
+      if (lightboxHistoryPushed.current && window.history.state?.tallyBackScreenshot) {
+        lightboxHistoryPushed.current = false
+        window.history.back()
+      }
+    }
   }, [activeScreenshot])
 
   return (
@@ -1336,15 +1361,16 @@ function PaymentScreenshotGallery({
         })}
       </div>
 
-      {activeScreenshot ? (
-        <div className="screenshot-lightbox" role="presentation" onMouseDown={() => setActiveScreenshot(null)}>
-          <section role="dialog" aria-modal="true" aria-label="Payment screenshot" onMouseDown={(event) => event.stopPropagation()}>
-            <button type="button" onClick={() => setActiveScreenshot(null)} aria-label="Close screenshot">
+      {activeScreenshot ? createPortal(
+        <div className="screenshot-lightbox" role="presentation" onPointerDown={closeActiveScreenshot}>
+          <section role="dialog" aria-modal="true" aria-label="Payment screenshot" onPointerDown={(event) => event.stopPropagation()}>
+            <button type="button" onClick={closeActiveScreenshot} aria-label="Close screenshot">
               <X size={20} />
             </button>
             <img src={activeScreenshot.url} alt={activeScreenshot.name} />
           </section>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   )
