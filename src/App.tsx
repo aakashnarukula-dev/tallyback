@@ -1063,85 +1063,99 @@ function PersonDrawer({
   onRequestReview: (entry: LedgerEntry) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
 }) {
+  const openDueEntries = summary.entries.filter((entry) => entry.status === 'open')
+  const firstName = summary.person.name.split(' ')[0]
+
   return (
     <div className="drawer-backdrop" onMouseDown={onClose} role="presentation">
       <aside className="person-drawer" role="dialog" aria-modal="true" aria-labelledby="person-ledger-title" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="drawer-topbar">
+        <header className="drawer-topbar">
           <button className="drawer-back" onClick={onClose} aria-label="Close details"><ChevronLeft size={20} /></button>
-          <span>Details</span>
-          <span aria-hidden="true" />
-        </div>
-        <div className="person-hero">
-          <Avatar person={summary.person} size="lg" />
-          <h2 id="person-ledger-title">{summary.person.name}</h2>
-          <p>{formatPhone(summary.person.phone)}</p>
+          <div className="drawer-person-title">
+            <Avatar person={summary.person} size="sm" />
+            <span>
+              <strong id="person-ledger-title">{summary.person.name}</strong>
+              <small>{formatPhone(summary.person.phone)}</small>
+            </span>
+          </div>
+          {direction === 'receivable' ? (
+            <button className="drawer-quick-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
+              <Plus size={16} /> Add due
+            </button>
+          ) : <span className="drawer-topbar-spacer" aria-hidden="true" />}
+        </header>
+        <section className={`person-balance ${direction}`} aria-label="Open balance">
+          <div>
+            <span>{direction === 'receivable' ? 'They owe you' : 'You owe them'}</span>
+            <small>{summary.openCount} open {summary.openCount === 1 ? 'due' : 'dues'}</small>
+          </div>
           <strong className={direction === 'payable' ? 'amount-negative' : ''}>{money.format(summary.total)}</strong>
-          <span>{summary.openCount ? (direction === 'receivable' ? 'owes you' : 'you owe') : 'No open dues'}</span>
-          {direction === 'receivable' ? <button className="drawer-add-due" type="button" onClick={() => onAddDue(summary.person)}><Plus size={17} /> Add due for {summary.person.name.split(' ')[0]}</button> : null}
-        </div>
-        <div className="drawer-divider" />
+        </section>
         <div className="drawer-entries">
           <div className="drawer-section-title">
-            <h3>Dues in this ledger</h3>
+            <div>
+              <h3>Open dues</h3>
+              <p>{direction === 'receivable' ? `Payments expected from ${firstName}` : `Payments recorded by ${firstName}’s lenders`}</p>
+            </div>
             <span>{summary.openCount}</span>
           </div>
           {!summary.openCount ? (
             <div className="drawer-empty-ledger">
               <ReceiptText size={21} />
               <strong>No dues yet</strong>
-              <span>Add first due without entering this person again.</span>
+              <span>{direction === 'receivable' ? `Add first due for ${firstName}.` : 'New dues assigned to you appear here.'}</span>
+              {direction === 'receivable' ? <button className="secondary-button" type="button" onClick={() => onAddDue(summary.person)}><Plus size={15} /> Add due</button> : null}
             </div>
           ) : null}
-          {summary.entries.filter((entry) => entry.status === 'open').map((entry) => {
-            const Icon = methodIcons[entry.method]
-            const review = pendingReviews.get(entry.id)
-            return (
-              <article className="drawer-entry" key={entry.id}>
-                <span className="method-icon"><Icon size={17} /></span>
-                <div>
-                  <h4>{entry.occasion}</h4>
-                  <p>{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
-                </div>
-                <strong>{money.format(entry.amount)}</strong>
-                {entry.screenshots?.length ? (
-                  <PaymentScreenshotGallery screenshots={entry.screenshots} />
-                ) : null}
-                {review ? (
-                  <div className={`entry-review ${direction}`}>
-                    <div>
-                      <span className="review-status"><Flag size={13} /> Review pending</span>
-                      <strong>
-                        {review.kind === 'amount'
-                          ? `${entry.borrower.name} says the amount should be ${money.format(review.proposedAmount)}.`
-                          : `${entry.borrower.name} says this has already been paid.`}
-                      </strong>
-                      {review.note ? <p>“{review.note}”</p> : null}
-                    </div>
-                    {direction === 'receivable' ? (
-                      <div className="review-actions">
-                        <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
-                        <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'approved')}>
-                          {review.kind === 'amount' ? 'Use new amount' : 'Confirm paid'}
-                        </button>
+          <div className="drawer-entry-list">
+            {openDueEntries.map((entry) => {
+              const Icon = methodIcons[entry.method]
+              const review = pendingReviews.get(entry.id)
+              return (
+                <article className="drawer-entry" key={entry.id}>
+                  <span className="method-icon"><Icon size={17} /></span>
+                  <div className="drawer-entry-copy">
+                    <h4>{entry.occasion}</h4>
+                    <p>{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
+                  </div>
+                  <strong className="drawer-entry-amount">{money.format(entry.amount)}</strong>
+                  {entry.screenshots?.length ? (
+                    <PaymentScreenshotGallery screenshots={entry.screenshots} />
+                  ) : null}
+                  {review ? (
+                    <div className={`entry-review ${direction}`}>
+                      <div>
+                        <span className="review-status"><Flag size={13} /> Review pending</span>
+                        <strong>
+                          {review.kind === 'amount'
+                            ? `${entry.borrower.name} says the amount should be ${money.format(review.proposedAmount)}.`
+                            : `${entry.borrower.name} says this has already been paid.`}
+                        </strong>
+                        {review.note ? <p>“{review.note}”</p> : null}
                       </div>
-                    ) : <small>Waiting for {entry.lender.name} to review this.</small>}
-                  </div>
-                ) : null}
-                {direction === 'receivable' ? (
-                  <div className="drawer-entry-actions">
-                    {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button> : null}
-                    <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete due</button>
-                  </div>
-                ) : !review ? (
-                  <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
-                ) : null}
-              </article>
-            )
-          })}
+                      {direction === 'receivable' ? (
+                        <div className="review-actions">
+                          <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
+                          <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'approved')}>
+                            {review.kind === 'amount' ? 'Use new amount' : 'Confirm paid'}
+                          </button>
+                        </div>
+                      ) : <small>Waiting for {entry.lender.name} to review this.</small>}
+                    </div>
+                  ) : null}
+                  {direction === 'receivable' ? (
+                    <div className="drawer-entry-actions">
+                      {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark paid</button> : null}
+                      <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete due</button>
+                    </div>
+                  ) : !review ? (
+                    <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
+                  ) : null}
+                </article>
+              )
+            })}
+          </div>
         </div>
-        <p className="drawer-note">
-          <ShieldCheck size={16} /> This ledger is visible only to you and {summary.person.name}.
-        </p>
       </aside>
     </div>
   )
