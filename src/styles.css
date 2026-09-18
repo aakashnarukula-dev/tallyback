@@ -2108,6 +2108,7 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   padding: 27px 18px;
   border: 1px dashed #d8deea;
   border-radius: 14px;
