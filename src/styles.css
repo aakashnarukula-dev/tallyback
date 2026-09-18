@@ -3035,13 +3035,13 @@ a {
   }
 
   .activity-row {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .activity-amount {
-    grid-column: 2;
-    flex-direction: row;
-    align-items: center;
+    grid-column: auto;
+    flex-direction: column;
+    align-items: flex-end;
   }
 }
 

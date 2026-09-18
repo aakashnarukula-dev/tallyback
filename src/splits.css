@@ -128,6 +128,46 @@
 .split-editor {
   min-width: 0;
   padding: 16px;
+  animation: split-editor-in 220ms ease-out;
+}
+
+.split-launcher {
+  min-height: clamp(360px, calc(100dvh - 245px), 680px);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.split-launch-button {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--indigo);
+  box-shadow: 0 14px 32px rgba(91, 92, 226, 0.3);
+  color: white;
+  font-size: 12px;
+  font-weight: 750;
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.split-launch-button:hover {
+  background: var(--indigo-dark);
+  box-shadow: 0 16px 36px rgba(71, 72, 202, 0.35);
+  transform: translateY(-2px);
+}
+
+.split-launch-button:active {
+  transform: scale(0.98);
+}
+
+@keyframes split-editor-in {
+  from { opacity: 0; transform: translateY(8px); }
 }
 
 .split-editor-bar,
@@ -687,6 +727,10 @@
 @media (max-width: 700px) {
   .split-admin-layout {
     grid-template-columns: 1fr;
+  }
+
+  .split-launcher {
+    min-height: calc(100dvh - 197px);
   }
 
   .split-list-panel {

@@ -53,6 +53,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
   const [selectedId, setSelectedId] = useState('')
   const [contacts, setContacts] = useState<Record<string, SplitContact>>({})
   const [draft, setDraft] = useState<SplitDraft>(blankDraft)
+  const [creating, setCreating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -85,12 +86,14 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
   const paid = useMemo(() => draft.recipients.filter((row) => row.status === 'paid').reduce((sum, row) => sum + Number(row.amount || 0), 0), [draft.recipients])
 
   function selectPage(page: SplitPage) {
+    setCreating(false)
     setSelectedId(page.id)
     setContacts({})
     setDraft(draftFromPage(page, {}))
   }
 
   function startNew() {
+    setCreating(true)
     setSelectedId('')
     setContacts({})
     setDraft(blankDraft())
@@ -112,6 +115,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     try {
       const id = await saveSplitPage(draft, auth.currentUser.uid, currentUser)
       setSelectedId(id)
+      setCreating(false)
       onNotice('Split saved. Every member now has a matching ledger entry.')
     } catch (error) {
       onNotice((error as Error).message || 'Could not save this split.')
@@ -146,8 +150,8 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
 
   return (
     <section className="split-workspace">
-      <div className={`split-admin-layout ${!loading && !pages.length ? 'single' : ''}`}>
-        {(loading || pages.length > 0) ? (
+      <div className={`split-admin-layout ${!pages.length ? 'single' : ''}`}>
+        {pages.length > 0 ? (
           <aside className="split-list-panel">
             <div className="split-list-title"><strong>Your splits</strong><span>{pages.length}</span></div>
             <div className="split-list">
@@ -160,17 +164,20 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
                   </button>
                 )
               })}
-              {loading ? <div className="split-list-empty"><p>Loading splits…</p></div> : null}
             </div>
           </aside>
         ) : null}
 
+        {loading ? (
+          <div className="split-launcher"><p>Loading splits…</p></div>
+        ) : creating || selectedId ? (
         <form className="split-editor" onSubmit={save}>
           <div className="split-editor-bar">
             <div><strong>{draft.title || 'Untitled split'}</strong></div>
             <div>
               {selectedId ? <button className="secondary-button" type="button" onClick={copyLink}><Copy size={15} /> Copy link</button> : null}
               {selectedId && <a className="secondary-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Preview</a>}
+              {creating ? <button className="secondary-button" type="button" onClick={() => { setCreating(false); setDraft(blankDraft()) }}>Cancel</button> : null}
               <button className="primary-button" type="submit" disabled={saving}><Save size={15} /> {saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
@@ -215,9 +222,12 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
 
           {selectedId && <p className="split-link-note"><Link2 size={15} /> tally-back.web.app/split/{selectedId}</p>}
         </form>
+        ) : (
+          <div className="split-launcher">
+            <button className="split-launch-button" type="button" onClick={startNew}><Plus size={19} /> New split</button>
+          </div>
+        )}
       </div>
-
-      <button className="add-person-fab" type="button" onClick={startNew}><Plus size={18} /> <span>New split</span></button>
     </section>
   )
 }

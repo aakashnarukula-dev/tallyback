@@ -617,7 +617,7 @@ function AddPersonModal({
           </button>
         ) : null}
 
-        <div className="modal-separator"><span>{contactPickerAvailable ? 'or enter manually' : 'Enter contact details'}</span></div>
+        {contactPickerAvailable ? <div className="modal-separator"><span>or enter manually</span></div> : null}
 
         <form onSubmit={submit}>
           <div className="person-form-grid">
@@ -1935,7 +1935,7 @@ function TallyBackApp() {
             ) : view === 'activity' ? (
               <section className="activity-view">
                 <div className="page-heading activity-heading">
-                  <div><p>Your complete trail</p><h1>Activity</h1></div>
+                  <div><h1>Activity</h1></div>
                 </div>
                 <div className="activity-tabs">
                   <button className={direction === 'receivable' ? 'active' : ''} onClick={() => setDirection('receivable')}>To receive</button>
