@@ -234,6 +234,7 @@ function LoginScreen({
   const [truecallerWorking, setTruecallerWorking] = useState(false)
   const [truecallerArmed, setTruecallerArmed] = useState(false)
   const truecallerController = useRef<AbortController | null>(null)
+  const otpController = useRef<AbortController | null>(null)
   const truecallerInit = useRef<TruecallerInit | null>(null)
   const verificationAttempt = useRef('')
 
@@ -254,6 +255,8 @@ function LoginScreen({
       truecallerInit.current = null
     }
   }, [])
+
+  useEffect(() => () => otpController.current?.abort(), [])
 
   function activateTruecaller() {
     const prepared = truecallerInit.current
@@ -328,6 +331,34 @@ function LoginScreen({
 
     try {
       setWorking(true)
+      otpController.current?.abort()
+      otpController.current = null
+
+      if ('OTPCredential' in window && navigator.credentials) {
+        const controller = new AbortController()
+        otpController.current = controller
+
+        navigator.credentials.get({
+          otp: { transport: ['sms'] },
+          signal: controller.signal,
+        } as CredentialRequestOptions & {
+          otp: { transport: ['sms'] }
+          signal: AbortSignal
+        }).then((credential) => {
+          const receivedCode = (credential as (Credential & { code?: string }) | null)?.code
+            ?.replace(/[^0-9]/g, '')
+            .slice(0, 6)
+          if (receivedCode && !controller.signal.aborted) changeCode(receivedCode)
+        }).catch((otpError) => {
+          const errorName = (otpError as Error).name
+          if (errorName !== 'AbortError' && errorName !== 'NotAllowedError') {
+            console.warn('SMS code autofill unavailable:', otpError)
+          }
+        }).finally(() => {
+          if (otpController.current === controller) otpController.current = null
+        })
+      }
+
       recaptchaVerifier?.clear()
       recaptchaVerifier = new RecaptchaVerifier(auth, 'phone-sign-in-button', {
         size: 'invisible',
@@ -335,6 +366,8 @@ function LoginScreen({
       const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifier)
       setConfirmation(result)
     } catch (signInError) {
+      otpController.current?.abort()
+      otpController.current = null
       recaptchaVerifier?.clear()
       recaptchaVerifier = null
       setError(authErrorMessage(signInError))
@@ -347,6 +380,8 @@ function LoginScreen({
     const normalizedPhone = nextPhone.replace(/[^0-9]/g, '').slice(0, 10)
 
     if (confirmation && normalizedPhone !== phone) {
+      otpController.current?.abort()
+      otpController.current = null
       setConfirmation(null)
       setCode('')
       verificationAttempt.current = ''
@@ -359,9 +394,14 @@ function LoginScreen({
   }
 
   function changeCode(nextCode: string) {
+    const normalizedCode = nextCode.replace(/[^0-9]/g, '').slice(0, 6)
+    if (normalizedCode.length === 6) {
+      otpController.current?.abort()
+      otpController.current = null
+    }
     verificationAttempt.current = ''
     setError('')
-    setCode(nextCode.replace(/[^0-9]/g, '').slice(0, 6))
+    setCode(normalizedCode)
   }
 
   return (
