@@ -212,6 +212,15 @@ function authErrorMessage(error: unknown) {
   return 'Could not complete sign-in. Check your connection and try again.'
 }
 
+function firebaseErrorDetails(error: unknown) {
+  if (!error || typeof error !== 'object') return { code: '', message: String(error) }
+  const firebaseError = error as { code?: unknown; message?: unknown }
+  return {
+    code: typeof firebaseError.code === 'string' ? firebaseError.code : '',
+    message: typeof firebaseError.message === 'string' ? firebaseError.message : String(error),
+  }
+}
+
 function LoginScreen({
   onAuthenticated,
 }: {
@@ -828,10 +837,14 @@ function AddEntryModal({
 
     const entryId = entry?.id ?? `loan-${Date.now()}`
     let uploadedScreenshots: PaymentScreenshot[] = []
+    let saveStage: 'upload' | 'ledger' = 'upload'
 
     try {
       setSaving(true)
       setError('')
+      // Refresh once before Storage so newly-created phone sessions carry the
+      // latest claims and are not rejected by a stale cached ID token.
+      await auth.currentUser.getIdToken(true)
       if (screenshots.length) {
         setUploadProgress({ completed: 0, total: screenshots.length })
         uploadedScreenshots = await uploadPaymentScreenshots(
@@ -842,6 +855,7 @@ function AddEntryModal({
         )
       }
 
+      saveStage = 'ledger'
       await onSave({
         id: entryId,
         lender: entry?.lender ?? currentUser,
@@ -857,9 +871,19 @@ function AddEntryModal({
           ? { screenshots: [...(entry?.screenshots ?? []), ...uploadedScreenshots] }
           : {}),
       })
-    } catch {
+    } catch (saveError) {
       if (uploadedScreenshots.length) await deletePaymentScreenshots(uploadedScreenshots)
-      setError(`Could not ${entry ? 'update' : 'save'} this due. Check your connection and try again.`)
+      const details = firebaseErrorDetails(saveError)
+      console.error('[TallyBack] Due save failed', {
+        stage: saveStage,
+        code: details.code,
+        message: details.message,
+        entryId,
+        uid: auth.currentUser.uid,
+      })
+      setError(saveStage === 'upload'
+        ? 'Could not upload the payment screenshot. Refresh once and try again.'
+        : `Could not ${entry ? 'update' : 'save'} this due. Refresh once and try again.`)
     } finally {
       setSaving(false)
       setUploadProgress(null)
@@ -1767,6 +1791,13 @@ function TallyBackApp() {
       setAddDuePerson(null)
       setToast('Entry saved. Both sides now share the same record.')
     } catch (error) {
+      const details = firebaseErrorDetails(error)
+      console.error('[TallyBack] Ledger write failed', {
+        code: details.code,
+        message: details.message,
+        entryId: entry.id,
+        uid: auth?.currentUser?.uid ?? '',
+      })
       setToast('Could not save this entry. Please try again.')
       throw error
     }

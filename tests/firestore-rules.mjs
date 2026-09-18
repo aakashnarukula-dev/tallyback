@@ -254,6 +254,72 @@ try {
     { contentType: 'text/plain' },
   ))
 
+  const secondPhoneUid = 'second-phone-user'
+  const secondPhoneStorage = testEnvironment
+    .authenticatedContext(secondPhoneUid, { phone_number: otherPhone })
+    .storage('gs://demo-tallyback.firebasestorage.app')
+  await assertSucceeds(uploadString(
+    storageRef(secondPhoneStorage, `ledgerEntries/second-phone-entry/${secondPhoneUid}/proof.png`),
+    'second-account-payment-proof',
+    'raw',
+    { contentType: 'image/png' },
+  ))
+  const secondPhoneDatabase = testEnvironment
+    .authenticatedContext(secondPhoneUid, { phone_number: otherPhone })
+    .firestore()
+  await assertSucceeds(setDoc(doc(secondPhoneDatabase, 'ledgerEntries', 'second-phone-entry'), {
+    lender: { name: 'Second phone member', phone: otherPhone },
+    borrower: { name: 'Aakash Work', phone },
+    lenderPhone: otherPhone,
+    borrowerPhone: phone,
+    participantPhones: [otherPhone, phone],
+    amount: 1,
+    occasion: 'Movie',
+    method: 'UPI',
+    date: '2026-09-18',
+    status: 'open',
+    createdBy: secondPhoneUid,
+    screenshots: [{
+      path: `ledgerEntries/second-phone-entry/${secondPhoneUid}/proof.png`,
+      name: 'proof.png',
+      contentType: 'image/png',
+      size: 28,
+    }],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }))
+  await assertSucceeds(getDoc(doc(truecallerDatabase, 'ledgerEntries', 'second-phone-entry')))
+  await assertSucceeds(getMetadata(storageRef(
+    truecallerStorage,
+    `ledgerEntries/second-phone-entry/${secondPhoneUid}/proof.png`,
+  )))
+  await assertFails(uploadString(
+    storageRef(secondPhoneStorage, `ledgerEntries/second-phone-entry/${uid}/wrong-owner.png`),
+    'wrong-owner-payment-proof',
+    'raw',
+    { contentType: 'image/png' },
+  ))
+
+  const claimRefreshStorage = testEnvironment
+    .authenticatedContext('fresh-phone-session')
+    .storage('gs://demo-tallyback.firebasestorage.app')
+  await assertSucceeds(uploadString(
+    storageRef(claimRefreshStorage, 'ledgerEntries/fresh-session-entry/fresh-phone-session/proof.png'),
+    'fresh-session-payment-proof',
+    'raw',
+    { contentType: 'image/png' },
+  ))
+
+  const signedOutStorage = testEnvironment
+    .unauthenticatedContext()
+    .storage('gs://demo-tallyback.firebasestorage.app')
+  await assertFails(uploadString(
+    storageRef(signedOutStorage, 'ledgerEntries/signed-out-entry/signed-out-user/proof.png'),
+    'signed-out-payment-proof',
+    'raw',
+    { contentType: 'image/png' },
+  ))
+
   await assertFails(deleteDoc(doc(smsDatabase, 'ledgerEntries', 'saved-entry')))
   await assertSucceeds(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', 'saved-entry')))
 

@@ -33,7 +33,11 @@ service firebase.storage {
     }
 
     match /ledgerEntries/{entryId}/{uploaderUid}/{fileName} {
-      allow create: if signedInWithPhone()
+      // Upload ownership is tied to the authenticated Firebase UID. Phone
+      // identity is enforced again when the ledger document is created.
+      // Avoid rejecting a valid, freshly-created phone session while its ID
+      // token is still missing the mirrored phone claim.
+      allow create: if request.auth != null
         && request.auth.uid == uploaderUid
         && fileName.matches('^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$')
         && request.resource.size > 0

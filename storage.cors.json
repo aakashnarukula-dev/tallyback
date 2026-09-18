@@ -5,8 +5,16 @@
       "https://tally-back.firebaseapp.com",
       "http://localhost:5173"
     ],
-    "method": ["GET", "HEAD"],
-    "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "ETag"],
+    "method": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "ETag",
+      "X-Firebase-Storage-XSRF",
+      "X-Goog-Upload-URL",
+      "X-Goog-Upload-Status"
+    ],
     "maxAgeSeconds": 3600
   }
 ]
