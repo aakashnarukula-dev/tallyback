@@ -10,6 +10,7 @@
     "test:firestore-rules": "firebase emulators:exec --only firestore,storage --project demo-tallyback \"node tests/firestore-rules.mjs\""
   },
   "dependencies": {
+    "@fontsource-variable/manrope": "^5.3.0",
     "@fontsource-variable/newsreader": "^5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@vitejs/plugin-react": "latest",

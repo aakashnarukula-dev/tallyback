@@ -2,10 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/plus-jakarta-sans'
 import '@fontsource-variable/newsreader'
+import '@fontsource-variable/manrope'
 import App from './App'
 import './styles.css'
 import './splits.css'
-import './studio.css'
+import './pastel.css'
+import './hybrid.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
