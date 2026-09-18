@@ -1889,7 +1889,7 @@ function TallyBackApp() {
                       <p>{direction === 'receivable' ? `${allSummaries.length} saved ${allSummaries.length === 1 ? 'person' : 'people'}` : `${openEntries} open ${openEntries === 1 ? 'due' : 'dues'}`}</p>
                     </div>
                     <div className={`people-toolbar-total ${direction}`}>
-                      <span>{direction === 'receivable' ? 'Total to receive' : 'Total due'}</span>
+                      <span>{direction === 'receivable' ? 'Outstanding balance' : 'Total due'}</span>
                       <strong>{money.format(direction === 'receivable' ? ledgerTotals.receivable : ledgerTotals.payable)}</strong>
                     </div>
                   </div>
