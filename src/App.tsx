@@ -488,6 +488,71 @@ function AddPersonModal({
   const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
+  const sheetRef = useRef<HTMLElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const dragStartRef = useRef({ y: 0, time: 0 })
+  const dragYRef = useRef(0)
+  const workingRef = useRef(false)
+  const closingRef = useRef(false)
+  const [dragY, setDragY] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const [closing, setClosing] = useState(false)
+
+  workingRef.current = working
+
+  function closeSheet(force = false) {
+    if (closingRef.current || (workingRef.current && !force)) return
+    closingRef.current = true
+    setClosing(true)
+    setDragging(false)
+    closeTimerRef.current = window.setTimeout(onClose, 240)
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || closingRef.current || workingRef.current) return
+    dragStartRef.current = { y: event.clientY, time: performance.now() }
+    dragYRef.current = 0
+    setDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    const nextDragY = Math.max(0, event.clientY - dragStartRef.current.y)
+    dragYRef.current = nextDragY
+    setDragY(nextDragY)
+  }
+
+  function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    const elapsed = Math.max(performance.now() - dragStartRef.current.time, 1)
+    const velocity = dragYRef.current / elapsed
+    if (dragYRef.current > Math.min(130, window.innerHeight * 0.16) || (dragYRef.current > 28 && velocity > 0.55)) {
+      closeSheet()
+      return
+    }
+    dragYRef.current = 0
+    setDragging(false)
+    setDragY(0)
+  }
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    sheetRef.current?.focus()
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSheet()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+    }
+  }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -500,6 +565,7 @@ function AddPersonModal({
       setWorking(true)
       setError('')
       await onSave({ name: name.trim(), phone: toE164(phone) })
+      closeSheet(true)
     } catch (saveError) {
       setError((saveError as Error).message || 'Could not save this person. Check connection and try again.')
     } finally {
@@ -522,16 +588,26 @@ function AddPersonModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose() }}>
-      <section className="modal-card add-person-modal" role="dialog" aria-modal="true" aria-labelledby="add-person-title" onMouseDown={(event) => event.stopPropagation()}>
-        <span className="sheet-grabber" aria-hidden="true" />
-        <div className="modal-header">
-          <div>
-            <p className="modal-kicker">New person</p>
-            <h2 id="add-person-title">Who do you lend to?</h2>
-          </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={working}><X size={20} /></button>
-        </div>
+    <div className={`modal-backdrop add-person-backdrop ${closing ? 'closing' : ''}`} role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) closeSheet() }}>
+      <section
+        ref={sheetRef}
+        className={`modal-card add-person-modal ${dragging ? 'dragging' : ''} ${closing ? 'closing' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add person"
+        tabIndex={-1}
+        style={{ '--sheet-drag-y': `${dragY}px` } as CSSProperties}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button
+          className="add-person-grabber"
+          type="button"
+          aria-label="Drag down to close add person"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+        ><span /></button>
 
         {contactPickerAvailable ? (
           <button className="contact-import-card" type="button" onClick={importContacts} disabled={working}>
@@ -559,7 +635,7 @@ function AddPersonModal({
           </div>
           {error ? <p className="form-error">{error}</p> : null}
           <div className="modal-actions">
-            <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Cancel</button>
+            <button className="secondary-button" type="button" onClick={() => closeSheet()} disabled={working}>Cancel</button>
             <button className="primary-button" type="submit" disabled={working}>{working ? 'Saving…' : 'Save person'}</button>
           </div>
         </form>
@@ -1678,10 +1754,9 @@ function TallyBackApp() {
     const savedContact: SavedContact = { ...person, phone: toE164(phone), source: 'manual' }
     await saveContact(firebaseUser.uid, savedContact, 'manual')
     setContacts((current) => [savedContact, ...current.filter((item) => normalizePhone(item.phone) !== phone)])
-    setShowAddPerson(false)
-    setSelectedPhone(phone)
     setDirection('receivable')
     setToast(`${savedContact.name} added. Add first due inside their ledger.`)
+    window.setTimeout(() => setSelectedPhone(phone), 260)
   }
 
   async function importDeviceContacts() {
@@ -1799,11 +1874,11 @@ function TallyBackApp() {
                 <div className="balance-switch people-balance-switch" role="tablist" aria-label="Choose ledger side">
                   <button role="tab" aria-selected={direction === 'receivable'} className={direction === 'receivable' ? 'active receive' : ''} onClick={() => setDirection('receivable')}>
                     <span className="switch-icon"><ArrowDownLeft size={19} /></span>
-                    <span><small>You owe me</small><strong>{money.format(ledgerTotals.receivable)}</strong></span>
+                    <span><small>To receive</small><strong>{money.format(ledgerTotals.receivable)}</strong></span>
                   </button>
                   <button role="tab" aria-selected={direction === 'payable'} className={direction === 'payable' ? 'active pay' : ''} onClick={() => setDirection('payable')}>
                     <span className="switch-icon"><ArrowUpRight size={19} /></span>
-                    <span><small>I owe you</small><strong>{money.format(ledgerTotals.payable)}</strong></span>
+                    <span><small>To pay</small><strong>{money.format(ledgerTotals.payable)}</strong></span>
                   </button>
                 </div>
 
@@ -1863,8 +1938,8 @@ function TallyBackApp() {
                   <div><p>Your complete trail</p><h1>Activity</h1></div>
                 </div>
                 <div className="activity-tabs">
-                  <button className={direction === 'receivable' ? 'active' : ''} onClick={() => setDirection('receivable')}>You owe me</button>
-                  <button className={direction === 'payable' ? 'active' : ''} onClick={() => setDirection('payable')}>I owe you</button>
+                  <button className={direction === 'receivable' ? 'active' : ''} onClick={() => setDirection('receivable')}>To receive</button>
+                  <button className={direction === 'payable' ? 'active' : ''} onClick={() => setDirection('payable')}>To pay</button>
                 </div>
                 <div className="activity-list">
                   {recentEntries.map((entry) => {
