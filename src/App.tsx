@@ -2033,8 +2033,8 @@ function TallyBackApp() {
                     )
                   })}
                   {!dataLoading && !contactsLoading && summaries.length === 0 ? (
-                    <div className="people-empty-state">
-                      <span><Contact size={25} /></span>
+                    <div className={`people-empty-state ${!search && direction === 'receivable' ? 'compact' : ''}`}>
+                      {search || direction === 'payable' ? <span><Contact size={25} /></span> : null}
                       {search ? (
                         <>
                           <h3>No matching person</h3>

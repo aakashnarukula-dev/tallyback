@@ -249,6 +249,11 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
+.people-empty-state.compact {
+  min-height: 132px;
+  padding: 24px;
+}
+
 .people-empty-state > svg,
 .drawer-empty-ledger > svg {
   color: var(--indigo);
