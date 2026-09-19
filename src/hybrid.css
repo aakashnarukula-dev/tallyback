@@ -1030,6 +1030,12 @@ textarea:focus-visible {
 
 .login-story {
   background: #20302e;
+  color: #f4faf7;
+}
+
+.brand-on-dark,
+.login-story h1 {
+  color: #f4faf7;
 }
 
 .brand-on-dark .brand-mark,
@@ -1039,7 +1045,7 @@ textarea:focus-visible {
 
 .story-kicker,
 .login-trust {
-  color: #a8cdc4;
+  color: #b9d9cf;
 }
 
 .login-story h1 {
@@ -1051,6 +1057,24 @@ textarea:focus-visible {
   border-color: rgba(255, 255, 255, 0.17);
   background: rgba(255, 255, 255, 0.07);
   box-shadow: 0 22px 55px rgba(12, 26, 23, 0.24);
+}
+
+.story-note-top {
+  border-color: rgba(232, 247, 241, 0.24);
+  color: #edf8f4;
+}
+
+.story-note-top strong {
+  color: #c8ebdf;
+}
+
+.story-line {
+  border-color: rgba(232, 247, 241, 0.2);
+  color: #bfd5ce;
+}
+
+.story-line span:last-child {
+  color: #e0eee9;
 }
 
 .login-form-panel {
