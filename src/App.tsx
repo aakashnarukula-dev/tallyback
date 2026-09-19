@@ -1751,7 +1751,9 @@ function PersonDrawer({
   onRequestReview: (entry: LedgerEntry, kind: ReviewKind) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
 }) {
-  const openDueEntries = summary.entries.filter((entry) => entry.status === 'open')
+  const openDueEntries = summary.entries
+    .filter((entry) => entry.status === 'open')
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
   const firstName = summary.person.name.split(' ')[0]
   const sheetRef = useRef<HTMLElement>(null)
   const closeTimerRef = useRef<number | null>(null)
@@ -1972,8 +1974,80 @@ function TallyBackApp() {
   const [toast, setToast] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
+  const ledgerGridRef = useRef<HTMLDivElement>(null)
+  const pullStartYRef = useRef<number | null>(null)
+  const pullDistanceRef = useRef(0)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [pullRefreshing, setPullRefreshing] = useState(false)
   const authSyncVersion = useRef(0)
   const contactPickerAvailable = canPickDeviceContacts()
+
+  useEffect(() => {
+    const ledgerGrid = ledgerGridRef.current
+    if (view !== 'ledger') return
+    if (!ledgerGrid) return
+    const activeLedgerGrid = ledgerGrid
+
+    function resetPull() {
+      pullStartYRef.current = null
+      pullDistanceRef.current = 0
+      setPullDistance(0)
+    }
+
+    function handleTouchStart(event: TouchEvent) {
+      if (pullRefreshing || activeLedgerGrid.scrollTop > 0 || event.touches.length !== 1) return
+      pullStartYRef.current = event.touches[0].clientY
+      pullDistanceRef.current = 0
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      if (pullRefreshing || pullStartYRef.current === null || event.touches.length !== 1) return
+      if (activeLedgerGrid.scrollTop > 0) {
+        resetPull()
+        return
+      }
+
+      const movement = event.touches[0].clientY - pullStartYRef.current
+      if (movement <= 0) {
+        pullDistanceRef.current = 0
+        setPullDistance(0)
+        return
+      }
+
+      event.preventDefault()
+      const dampedDistance = Math.min(78, movement * 0.42)
+      pullDistanceRef.current = dampedDistance
+      setPullDistance(dampedDistance)
+    }
+
+    function handleTouchEnd() {
+      if (pullRefreshing || pullStartYRef.current === null) return
+      const shouldRefresh = pullDistanceRef.current >= 52
+      pullStartYRef.current = null
+      pullDistanceRef.current = 0
+
+      if (!shouldRefresh) {
+        setPullDistance(0)
+        return
+      }
+
+      setPullRefreshing(true)
+      setPullDistance(40)
+      window.setTimeout(() => window.location.reload(), 180)
+    }
+
+    ledgerGrid.addEventListener('touchstart', handleTouchStart, { passive: true })
+    ledgerGrid.addEventListener('touchmove', handleTouchMove, { passive: false })
+    ledgerGrid.addEventListener('touchend', handleTouchEnd, { passive: true })
+    ledgerGrid.addEventListener('touchcancel', resetPull, { passive: true })
+
+    return () => {
+      ledgerGrid.removeEventListener('touchstart', handleTouchStart)
+      ledgerGrid.removeEventListener('touchmove', handleTouchMove)
+      ledgerGrid.removeEventListener('touchend', handleTouchEnd)
+      ledgerGrid.removeEventListener('touchcancel', resetPull)
+    }
+  }, [view])
 
   useEffect(() => {
     if (!auth) {
@@ -2552,7 +2626,22 @@ function TallyBackApp() {
                   </div>
                 </div>
 
-                <div className="contact-ledger-grid">
+                <div className="contact-ledger-grid" ref={ledgerGridRef}>
+                  {pullDistance > 0 || pullRefreshing ? (
+                    <div
+                      className={`pull-refresh-indicator${pullRefreshing ? ' refreshing' : ''}`}
+                      style={{
+                        '--pull-distance': `${pullDistance}px`,
+                        opacity: Math.min(pullDistance / 22, 1),
+                      } as CSSProperties}
+                      aria-live={pullRefreshing ? 'polite' : 'off'}
+                    >
+                      <span>
+                        <LoaderCircle size={16} />
+                        {pullRefreshing ? 'Refreshing…' : pullDistance >= 52 ? 'Release to refresh' : 'Pull to refresh'}
+                      </span>
+                    </div>
+                  ) : null}
                   {(dataLoading || contactsLoading) ? <div className="ledger-loading">Syncing people and dues…</div> : null}
                   {!dataLoading && !contactsLoading && summaries.map((summary) => {
                     return (
