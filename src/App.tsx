@@ -1754,6 +1754,12 @@ function PersonDrawer({
   const openDueEntries = summary.entries
     .filter((entry) => entry.status === 'open')
     .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+  const paidDueEntries = summary.entries
+    .filter((entry) => entry.status === 'settled')
+    .sort((a, b) => (
+      (b.settledAt ?? `${b.date}T00:00:00`).localeCompare(a.settledAt ?? `${a.date}T00:00:00`)
+      || b.id.localeCompare(a.id)
+    ))
   const firstName = summary.person.name.split(' ')[0]
   const sheetRef = useRef<HTMLElement>(null)
   const closeTimerRef = useRef<number | null>(null)
@@ -1945,6 +1951,39 @@ function PersonDrawer({
               )
             })}
           </div>
+          {paidDueEntries.length ? (
+            <section className="drawer-paid-history" aria-labelledby="paid-dues-title">
+              <div className="drawer-section-title drawer-paid-title">
+                <div>
+                  <h3 id="paid-dues-title">Paid</h3>
+                  <p>Completed payments with {firstName}</p>
+                </div>
+                <span>{paidDueEntries.length}</span>
+              </div>
+              <div className="drawer-entry-list">
+                {paidDueEntries.map((entry) => {
+                  const Icon = methodIcons[entry.method]
+                  const splitReference = getSplitLedgerReference(entry.id)
+                  return (
+                    <article className="drawer-entry drawer-entry-paid" key={entry.id}>
+                      <span className="method-icon"><Icon size={17} /></span>
+                      <div className="drawer-entry-copy">
+                        <h4>{entry.occasion}</h4>
+                        <p>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
+                      </div>
+                      <div className="drawer-paid-amount">
+                        <strong className="drawer-entry-amount">{money.format(entry.amount)}</strong>
+                        <span className="drawer-paid-status"><CheckCircle2 size={12} /> Paid</span>
+                      </div>
+                      {entry.screenshots?.length ? (
+                        <PaymentScreenshotGallery screenshots={entry.screenshots} />
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+          ) : null}
         </div>
       </aside>
     </div>
@@ -2447,7 +2486,7 @@ function TallyBackApp() {
       if (!auth?.currentUser) throw new Error('Sign in required')
       await resolveReviewRequest(review, entry, decision, auth.currentUser.uid)
       setToast(decision === 'approved'
-        ? review.kind === 'paid' ? 'Payment confirmed and due closed.' : 'Correction approved and ledger updated.'
+        ? review.kind === 'paid' ? 'Payment confirmed and marked as paid.' : 'Correction approved and ledger updated.'
         : review.kind === 'paid' ? 'Payment claim rejected.' : 'Correction rejected without changing the due.')
     } catch {
       setToast('Could not resolve this review request. Please try again.')
