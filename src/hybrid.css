@@ -165,12 +165,12 @@ textarea:focus-visible {
   color: #73827e;
 }
 
-.balance-switch button.active.receive .switch-icon {
+.balance-switch button.receive .switch-icon {
   background: var(--indigo-soft);
   color: var(--indigo);
 }
 
-.balance-switch button.active.pay .switch-icon {
+.balance-switch button.pay .switch-icon {
   background: var(--coral-soft);
   color: var(--coral);
 }
@@ -301,10 +301,11 @@ textarea:focus-visible {
   background: var(--indigo);
   color: #fff;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
-  box-shadow: 0 8px 18px rgba(57, 121, 108, 0.16);
+  box-shadow: none;
+  transition: none;
   cursor: pointer;
 }
 
@@ -316,7 +317,15 @@ textarea:focus-visible {
 }
 
 .add-person-inline:hover {
-  background: var(--indigo-dark);
+  background: var(--indigo);
+  box-shadow: none;
+  transform: none;
+}
+
+.add-person-inline:active {
+  background: var(--indigo);
+  box-shadow: none;
+  transform: none;
 }
 
 .add-person-inline:disabled {
@@ -1502,4 +1511,125 @@ body:has(.ledger-view-shell) {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Borrower-side payment claims */
+.drawer-entry-actions.payer-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.payer-actions .entry-action {
+  margin: 0;
+}
+
+.payer-actions .paid-claim {
+  background: #dff1eb;
+  color: #2f7568;
+}
+
+.payer-actions .proof-claim {
+  background: #e9e8f6;
+  color: #5e61b9;
+}
+
+.payer-actions .report {
+  margin-left: auto;
+  background: var(--coral-soft);
+  color: #a84d3d;
+}
+
+.review-proof-upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f6faf8;
+}
+
+.review-proof-upload > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.review-proof-upload strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.review-proof-upload span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.review-proof-files {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+}
+
+.review-proof-files > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.review-proof-files > div > span {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-proof-files button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--coral-soft);
+  color: #a84d3d;
+}
+
+.activity-state.review-event {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 12px;
+  background: #fff3d7;
+  color: #976c12;
+}
+
+.activity-state.review-event.approved,
+.activity-amount span.approved {
+  background: #dff1eb;
+  color: #2f7568;
+}
+
+.activity-state.review-event.rejected,
+.activity-amount span.rejected {
+  background: var(--coral-soft);
+  color: #a84d3d;
+}
+
+.activity-amount span.review {
+  background: #fff3d7;
+  color: #976c12;
 }

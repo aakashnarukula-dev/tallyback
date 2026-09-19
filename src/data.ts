@@ -54,6 +54,7 @@ export const getSplitLedgerReference = (entryId: string): SplitLedgerReference |
 export type ReviewKind = 'amount' | 'paid'
 
 export type LedgerReview = {
+  reviewId?: string
   requestedByUid: string
   requestedByPhone: string
   kind: ReviewKind
@@ -62,8 +63,40 @@ export type LedgerReview = {
   proposedOccasion?: string
   proposedDate?: string
   note: string
+  proofScreenshots?: PaymentScreenshot[]
   status: 'pending'
   createdAt?: unknown
+  updatedAt?: unknown
+}
+
+export type LedgerReviewStatus = 'pending' | 'approved' | 'rejected'
+
+export type LedgerReviewRecord = {
+  id: string
+  entryId: string
+  entryCreatedBy: string
+  lender: Person
+  borrower: Person
+  lenderPhone: string
+  borrowerPhone: string
+  participantPhones: string[]
+  requestedByUid: string
+  requestedByPhone: string
+  resolvedByUid?: string
+  kind: ReviewKind
+  originalAmount: number
+  originalMethod: PaymentMethod
+  originalOccasion: string
+  originalDate: string
+  proposedAmount: number
+  proposedMethod: PaymentMethod
+  proposedOccasion: string
+  proposedDate: string
+  note: string
+  proofScreenshots: PaymentScreenshot[]
+  status: LedgerReviewStatus
+  createdAt?: unknown
+  resolvedAt?: unknown
   updatedAt?: unknown
 }
 

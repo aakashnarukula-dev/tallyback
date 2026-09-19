@@ -6,6 +6,7 @@ import {
 } from '@firebase/rules-unit-testing'
 import {
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -17,6 +18,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore'
 import {
   getMetadata,
@@ -184,6 +186,98 @@ try {
     amount: 1,
     updatedAt: serverTimestamp(),
   }))
+
+  const paidReviewId = 'paid-review-unit123'
+  const paidReviewProof = {
+    path: 'ledgerEntries/attachment-entry/sms-user/paid-proof.png',
+    name: 'paid-proof.png',
+    contentType: 'image/png',
+    size: 2048,
+  }
+  const embeddedPaidReview = {
+    reviewId: paidReviewId,
+    requestedByUid: 'sms-user',
+    requestedByPhone: otherPhone,
+    kind: 'paid',
+    proposedAmount: 0,
+    proposedMethod: 'UPI',
+    proposedOccasion: 'Updated payment with proof',
+    proposedDate: '2026-09-15',
+    note: 'Paid by UPI',
+    proofScreenshots: [paidReviewProof],
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }
+  const submitPaidReview = writeBatch(smsDatabase)
+  submitPaidReview.update(doc(smsDatabase, 'ledgerEntries', 'attachment-entry'), {
+    review: embeddedPaidReview,
+    updatedAt: serverTimestamp(),
+  })
+  submitPaidReview.set(doc(smsDatabase, 'ledgerReviews', paidReviewId), {
+    entryId: 'attachment-entry',
+    entryCreatedBy: uid,
+    lender: { name: 'Aakash Work', phone },
+    borrower: { name: 'Aakash 2', phone: otherPhone },
+    lenderPhone: phone,
+    borrowerPhone: otherPhone,
+    participantPhones: [phone, otherPhone],
+    requestedByUid: 'sms-user',
+    requestedByPhone: otherPhone,
+    kind: 'paid',
+    originalAmount: 275,
+    originalMethod: 'UPI',
+    originalOccasion: 'Updated payment with proof',
+    originalDate: '2026-09-15',
+    proposedAmount: 0,
+    proposedMethod: 'UPI',
+    proposedOccasion: 'Updated payment with proof',
+    proposedDate: '2026-09-15',
+    note: 'Paid by UPI',
+    proofScreenshots: [paidReviewProof],
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  await assertSucceeds(submitPaidReview.commit())
+  await assertSucceeds(getDoc(doc(truecallerDatabase, 'ledgerReviews', paidReviewId)))
+
+  await assertFails(updateDoc(doc(smsDatabase, 'ledgerReviews', paidReviewId), {
+    status: 'approved',
+    resolvedByUid: 'sms-user',
+    resolvedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }))
+
+  const approvePaidReview = writeBatch(truecallerDatabase)
+  approvePaidReview.update(doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'), {
+    review: null,
+    status: 'settled',
+    settledAt: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  })
+  approvePaidReview.update(doc(truecallerDatabase, 'ledgerReviews', paidReviewId), {
+    status: 'approved',
+    resolvedByUid: uid,
+    resolvedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  await assertFails(approvePaidReview.commit())
+
+  const resolvePaidReview = writeBatch(truecallerDatabase)
+  resolvePaidReview.update(doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'), {
+    review: deleteField(),
+    status: 'settled',
+    settledAt: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  })
+  resolvePaidReview.update(doc(truecallerDatabase, 'ledgerReviews', paidReviewId), {
+    status: 'approved',
+    resolvedByUid: uid,
+    resolvedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  await assertSucceeds(resolvePaidReview.commit())
   const smsQuery = query(
     collection(smsDatabase, 'ledgerEntries'),
     or(
@@ -197,6 +291,7 @@ try {
   const strangerDatabase = testEnvironment
     .authenticatedContext('stranger', { verifiedPhone: '+919999999999' })
     .firestore()
+  await assertFails(getDoc(doc(strangerDatabase, 'ledgerReviews', paidReviewId)))
   await assertFails(getDocs(collection(strangerDatabase, 'users', uid, 'contacts')))
   await assertFails(setDoc(doc(strangerDatabase, contactPath), {
     name: 'Changed by stranger',

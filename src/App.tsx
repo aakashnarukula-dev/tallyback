@@ -44,10 +44,12 @@ import {
   getSplitLedgerReference,
   LedgerEntry,
   LedgerReview,
+  LedgerReviewRecord,
   normalizePhone,
   PaymentScreenshot,
   PaymentMethod,
   Person,
+  ReviewKind,
   SavedContact,
 } from './data'
 import { auth, isFirebaseConfigured } from './firebase'
@@ -73,6 +75,7 @@ import {
   createReviewRequest,
   resolveReviewRequest,
   ReviewDraft,
+  subscribeToReviewRecords,
 } from './firebase-reviews'
 import {
   acceptedScreenshotTypes,
@@ -100,6 +103,23 @@ type ContactSummary = {
   total: number
   openCount: number
   entries: LedgerEntry[]
+}
+
+type ReviewSubmissionDraft = Omit<ReviewDraft, 'proofScreenshots'> & {
+  proofFiles: File[]
+}
+
+type ActivityItem =
+  | { id: string; timestamp: number; type: 'entry'; entry: LedgerEntry }
+  | { id: string; timestamp: number; type: 'review-request' | 'review-resolution'; review: LedgerReviewRecord }
+
+function timestampMillis(value: unknown) {
+  if (value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+    return (value as { toMillis: () => number }).toMillis()
+  }
+  if (value instanceof Date) return value.getTime()
+  const parsed = Date.parse(String(value ?? ''))
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 const money = new Intl.NumberFormat('en-IN', {
@@ -1378,14 +1398,16 @@ function PaymentScreenshotGallery({
 
 function ReviewRequestModal({
   entry,
+  initialKind,
   onClose,
   onSend,
 }: {
   entry: LedgerEntry
+  initialKind: ReviewKind
   onClose: () => void
-  onSend: (draft: ReviewDraft) => Promise<void>
+  onSend: (draft: ReviewSubmissionDraft) => Promise<void>
 }) {
-  const [kind, setKind] = useState<ReviewDraft['kind']>('amount')
+  const [kind, setKind] = useState<ReviewDraft['kind']>(initialKind)
   const [amount, setAmount] = useState(String(entry.amount))
   const [method, setMethod] = useState<PaymentMethod>(entry.method)
   const [occasion, setOccasion] = useState(entry.occasion)
@@ -1393,6 +1415,20 @@ function ReviewRequestModal({
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
+  const [proofFiles, setProofFiles] = useState<File[]>([])
+  const proofInputRef = useRef<HTMLInputElement>(null)
+
+  function addProofFiles(event: ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    const invalid = selected.find((file) => !acceptedScreenshotTypes.includes(file.type) || file.size > MAX_SCREENSHOT_SIZE)
+    if (invalid) {
+      setError('Use JPG, PNG, WebP, or HEIC images up to 6 MB each.')
+      return
+    }
+    setProofFiles((current) => [...current, ...selected].slice(0, MAX_PAYMENT_SCREENSHOTS))
+    setError('')
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -1419,6 +1455,10 @@ function ReviewRequestModal({
       setError('Change at least one detail before sending for review.')
       return
     }
+    if (kind === 'paid' && proofFiles.length === 0) {
+      setError('Add at least one payment proof screenshot.')
+      return
+    }
 
     try {
       setWorking(true)
@@ -1430,6 +1470,7 @@ function ReviewRequestModal({
         proposedOccasion: occasion.trim(),
         proposedDate: date,
         note,
+        proofFiles,
       })
       onClose()
     } catch {
@@ -1450,8 +1491,8 @@ function ReviewRequestModal({
       >
         <div className="modal-header">
           <div>
-            <p className="modal-kicker">Request a correction</p>
-            <h2 id="review-request-title">What needs reviewing?</h2>
+            <p className="modal-kicker">{kind === 'paid' ? 'Confirm a payment' : 'Request a correction'}</p>
+            <h2 id="review-request-title">{kind === 'paid' ? 'Share payment proof' : 'What needs reviewing?'}</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
             <X size={20} />
@@ -1507,6 +1548,44 @@ function ReviewRequestModal({
                 <DatePicker value={date} onChange={setDate} />
               </div>
             </div>
+          ) : null}
+
+          {kind === 'paid' ? (
+            <section className="review-proof-upload">
+              <div>
+                <strong>Payment proof</strong>
+                <span>Required · 1–5 images, 6 MB each</span>
+              </div>
+              <input
+                ref={proofInputRef}
+                type="file"
+                accept={acceptedScreenshotTypes.join(',')}
+                multiple
+                hidden
+                onChange={addProofFiles}
+              />
+              <button
+                type="button"
+                className="payment-upload-button"
+                onClick={() => proofInputRef.current?.click()}
+                disabled={proofFiles.length >= MAX_PAYMENT_SCREENSHOTS}
+              >
+                <ImagePlus size={17} /> Add proof
+              </button>
+              {proofFiles.length ? (
+                <div className="review-proof-files">
+                  {proofFiles.map((file, index) => (
+                    <div key={`${file.name}-${file.lastModified}-${index}`}>
+                      <ImageIcon size={16} />
+                      <span>{file.name}</span>
+                      <button type="button" onClick={() => setProofFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${file.name}`}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
           ) : null}
 
           <label className="review-field">
@@ -1646,7 +1725,7 @@ function PersonDrawer({
   onDeleteDue: (entry: LedgerEntry) => void
   onOpenSplit: () => void
   onSettle: (id: string) => void
-  onRequestReview: (entry: LedgerEntry) => void
+  onRequestReview: (entry: LedgerEntry, kind: ReviewKind) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
 }) {
   const openDueEntries = summary.entries.filter((entry) => entry.status === 'open')
@@ -1808,6 +1887,7 @@ function PersonDrawer({
                             : `${entry.borrower.name} says this has already been paid.`}
                         </strong>
                         {review.note ? <p>“{review.note}”</p> : null}
+                        {review.proofScreenshots?.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} /> : null}
                       </div>
                       {direction === 'receivable' ? (
                         <div className="review-actions">
@@ -1830,7 +1910,11 @@ function PersonDrawer({
                           </>}
                     </div>
                   ) : !review ? (
-                    <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report a mistake</button>
+                    <div className="drawer-entry-actions payer-actions">
+                      <button className="entry-action paid-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><CheckCircle2 size={15} /> Paid</button>
+                      <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Upload proof</button>
+                      <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report a mistake</button>
+                    </div>
                   ) : null}
                 </article>
               )
@@ -1856,7 +1940,8 @@ function TallyBackApp() {
   const [addDuePerson, setAddDuePerson] = useState<Person | null>(null)
   const [editEntryTarget, setEditEntryTarget] = useState<LedgerEntry | null>(null)
   const [importingContacts, setImportingContacts] = useState(false)
-  const [reviewEntry, setReviewEntry] = useState<LedgerEntry | null>(null)
+  const [reviewIntent, setReviewIntent] = useState<{ entry: LedgerEntry; kind: ReviewKind } | null>(null)
+  const [reviewRecords, setReviewRecords] = useState<LedgerReviewRecord[]>([])
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<LedgerEntry | null>(null)
   const [deleteContactTarget, setDeleteContactTarget] = useState<Person | null>(null)
   const [resolvingReviewId, setResolvingReviewId] = useState<string | null>(null)
@@ -1961,6 +2046,20 @@ function TallyBackApp() {
   }, [currentUser])
 
   useEffect(() => {
+    const firebaseUser = auth?.currentUser
+    if (!currentUser || !firebaseUser || !isFirebaseConfigured) {
+      setReviewRecords([])
+      return
+    }
+
+    return subscribeToReviewRecords(
+      currentUser.phone,
+      setReviewRecords,
+      (error) => console.error('[reviews/listener]', error),
+    )
+  }, [currentUser])
+
+  useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(''), 1000)
     return () => window.clearTimeout(timer)
@@ -1981,7 +2080,7 @@ function TallyBackApp() {
         setShowAddPerson(false)
         setAddDuePerson(null)
         setEditEntryTarget(null)
-        setReviewEntry(null)
+        setReviewIntent(null)
         setDeleteEntryTarget(null)
         setDeleteContactTarget(null)
         setProfileOpen(false)
@@ -2079,10 +2178,37 @@ function TallyBackApp() {
 
   const selectedSummary = allSummaries.find((item) => normalizePhone(item.person.phone) === selectedPhone)
 
-  const recentEntries = useMemo(
-    () => [...relevantEntries].sort((a, b) => b.date.localeCompare(a.date)),
-    [relevantEntries],
-  )
+  const activityItems = useMemo<ActivityItem[]>(() => {
+    const items: ActivityItem[] = relevantEntries.map((entry) => ({
+      id: `entry-${entry.id}`,
+      timestamp: timestampMillis(entry.settledAt ?? `${entry.date}T00:00:00`),
+      type: 'entry',
+      entry,
+    }))
+
+    reviewRecords.forEach((review) => {
+      const belongsToDirection = direction === 'receivable'
+        ? normalizePhone(review.lenderPhone) === userPhone
+        : normalizePhone(review.borrowerPhone) === userPhone
+      if (!belongsToDirection) return
+      items.push({
+        id: `review-request-${review.id}`,
+        timestamp: timestampMillis(review.createdAt),
+        type: 'review-request',
+        review,
+      })
+      if (review.status !== 'pending') {
+        items.push({
+          id: `review-resolution-${review.id}`,
+          timestamp: timestampMillis(review.resolvedAt ?? review.updatedAt),
+          type: 'review-resolution',
+          review,
+        })
+      }
+    })
+
+    return items.sort((a, b) => b.timestamp - a.timestamp)
+  }, [direction, relevantEntries, reviewRecords, userPhone])
 
   function loginToFirebase(uid: string, person: Person) {
     const firebaseUser = auth?.currentUser
@@ -2097,6 +2223,7 @@ function TallyBackApp() {
     setCurrentUser(null)
     setEntries([])
     setContacts([])
+    setReviewRecords([])
     setProfileOpen(false)
   }
 
@@ -2168,7 +2295,7 @@ function TallyBackApp() {
 
     setEntries((current) => current.filter((item) => item.id !== entry.id))
     setDeleteEntryTarget(null)
-    if (reviewEntry?.id === entry.id) setReviewEntry(null)
+    if (reviewIntent?.entry.id === entry.id) setReviewIntent(null)
     setToast('Due deleted from both ledgers.')
   }
 
@@ -2190,10 +2317,27 @@ function TallyBackApp() {
     setToast(`${person.name} deleted. Paid history remains in Activity.`)
   }
 
-  async function sendReviewRequest(entry: LedgerEntry, draft: ReviewDraft) {
-    if (!auth?.currentUser) throw new Error('Sign in required')
-    await createReviewRequest(entry, auth.currentUser.uid, draft)
-    setToast('Sent to the person who recorded this entry for review.')
+  async function sendReviewRequest(entry: LedgerEntry, submission: ReviewSubmissionDraft) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser) throw new Error('Sign in required')
+    const { proofFiles, ...draft } = submission
+    let proofScreenshots: PaymentScreenshot[] = []
+    try {
+      if (proofFiles.length) {
+        proofScreenshots = await uploadPaymentScreenshots(entry.id, firebaseUser.uid, proofFiles)
+      }
+      await createReviewRequest(entry, firebaseUser.uid, { ...draft, proofScreenshots })
+      setToast(draft.kind === 'paid' ? 'Payment proof sent for confirmation.' : 'Correction sent for review.')
+    } catch (error) {
+      if (proofScreenshots.length) {
+        try {
+          await deletePaymentScreenshots(proofScreenshots)
+        } catch (cleanupError) {
+          console.warn('[review/proof/cleanup]', cleanupError)
+        }
+      }
+      throw error
+    }
   }
 
   async function resolveReview(
@@ -2203,8 +2347,11 @@ function TallyBackApp() {
   ) {
     try {
       setResolvingReviewId(entry.id)
-      await resolveReviewRequest(review, entry, decision)
-      setToast(decision === 'approved' ? 'Correction approved and ledger updated.' : 'Review closed without changing the entry.')
+      if (!auth?.currentUser) throw new Error('Sign in required')
+      await resolveReviewRequest(review, entry, decision, auth.currentUser.uid)
+      setToast(decision === 'approved'
+        ? review.kind === 'paid' ? 'Payment confirmed and due closed.' : 'Correction approved and ledger updated.'
+        : review.kind === 'paid' ? 'Payment claim rejected.' : 'Correction rejected without changing the due.')
     } catch {
       setToast('Could not resolve this review request. Please try again.')
     } finally {
@@ -2347,11 +2494,11 @@ function TallyBackApp() {
             {view === 'ledger' ? (
               <section className="people-workspace">
                 <div className="balance-switch people-balance-switch" role="tablist" aria-label="Choose ledger side">
-                  <button role="tab" aria-selected={direction === 'receivable'} className={direction === 'receivable' ? 'active receive' : ''} onClick={() => setDirection('receivable')}>
+                  <button role="tab" aria-selected={direction === 'receivable'} className={`receive ${direction === 'receivable' ? 'active' : ''}`} onClick={() => setDirection('receivable')}>
                     <span className="switch-icon"><ArrowDownLeft size={19} /></span>
                     <span><small>To receive</small><strong>{money.format(ledgerTotals.receivable)}</strong></span>
                   </button>
-                  <button role="tab" aria-selected={direction === 'payable'} className={direction === 'payable' ? 'active pay' : ''} onClick={() => setDirection('payable')}>
+                  <button role="tab" aria-selected={direction === 'payable'} className={`pay ${direction === 'payable' ? 'active' : ''}`} onClick={() => setDirection('payable')}>
                     <span className="switch-icon"><ArrowUpRight size={19} /></span>
                     <span><small>To pay</small><strong>{money.format(ledgerTotals.payable)}</strong></span>
                   </button>
@@ -2432,24 +2579,52 @@ function TallyBackApp() {
                   <button className={direction === 'payable' ? 'active' : ''} onClick={() => setDirection('payable')}>To pay</button>
                 </div>
                 <div className="activity-list">
-                  {recentEntries.map((entry) => {
-                    const entryPerson = direction === 'receivable' ? entry.borrower : entry.lender
-                    const person = contactsByPhone.get(normalizePhone(entryPerson.phone)) ?? entryPerson
-                    const Icon = methodIcons[entry.method]
+                  {activityItems.map((item) => {
+                    if (item.type === 'entry') {
+                      const { entry } = item
+                      const entryPerson = direction === 'receivable' ? entry.borrower : entry.lender
+                      const person = contactsByPhone.get(normalizePhone(entryPerson.phone)) ?? entryPerson
+                      const Icon = methodIcons[entry.method]
+                      return (
+                        <article className="activity-row" key={item.id}>
+                          <span className={`activity-state ${entry.status}`}>
+                            {entry.status === 'settled' ? <Check size={17} /> : <Icon size={17} />}
+                          </span>
+                          <div>
+                            <h3>{entry.occasion}</h3>
+                            <p>{person.name} · {getSplitLedgerReference(entry.id) ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</p>
+                          </div>
+                          <div className="activity-amount">
+                            <strong>{money.format(entry.amount)}</strong>
+                            <span className={pendingReviews.has(entry.id) ? 'review' : entry.status}>
+                              {pendingReviews.has(entry.id) ? 'Review pending' : entry.status === 'settled' ? 'Paid' : 'Open'}
+                            </span>
+                          </div>
+                        </article>
+                      )
+                    }
+
+                    const { review } = item
+                    const isResolution = item.type === 'review-resolution'
+                    const approved = review.status === 'approved'
+                    const eventTitle = isResolution
+                      ? review.kind === 'paid'
+                        ? approved ? 'Payment marked as paid' : 'Payment claim rejected'
+                        : approved ? 'Correction accepted' : 'Correction rejected'
+                      : review.kind === 'paid' ? 'Payment proof submitted' : 'Mistake reported'
+                    const eventState = isResolution ? review.status : 'review'
                     return (
-                      <article className="activity-row" key={entry.id}>
-                        <span className={`activity-state ${entry.status}`}>
-                          {entry.status === 'settled' ? <Check size={17} /> : <Icon size={17} />}
+                      <article className="activity-row review-activity-row" key={item.id}>
+                        <span className={`activity-state review-event ${eventState}`}>
+                          {isResolution ? approved ? <Check size={17} /> : <X size={17} /> : <Flag size={17} />}
                         </span>
                         <div>
-                          <h3>{entry.occasion}</h3>
-                          <p>{person.name} · {getSplitLedgerReference(entry.id) ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</p>
+                          <h3>{eventTitle}</h3>
+                          <p>{review.borrower.name} · {review.originalOccasion} · {shortDate.format(new Date(`${review.originalDate}T00:00:00`))}</p>
                         </div>
                         <div className="activity-amount">
-                          <strong>{money.format(entry.amount)}</strong>
-                          <span className={pendingReviews.has(entry.id) ? 'review' : entry.status}>
-                            {pendingReviews.has(entry.id) ? 'Review pending' : entry.status === 'settled' ? 'Paid' : 'Open'}
-                          </span>
+                          <strong>{money.format(review.kind === 'amount' ? review.proposedAmount : review.originalAmount)}</strong>
+                          <span className={eventState}>{isResolution ? approved ? 'Accepted' : 'Rejected' : 'Requested'}</span>
                         </div>
                       </article>
                     )
@@ -2486,12 +2661,17 @@ function TallyBackApp() {
           setView('splits')
         }}
         onSettle={markEntrySettled}
-        onRequestReview={setReviewEntry}
+        onRequestReview={(entry, kind) => setReviewIntent({ entry, kind })}
         onResolveReview={resolveReview}
       />}
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
       {editEntryTarget ? <AddEntryModal currentUser={currentUser} contact={editEntryTarget.borrower} entry={editEntryTarget} onClose={() => setEditEntryTarget(null)} onSave={updateEntry} /> : null}
-      {reviewEntry ? <ReviewRequestModal entry={reviewEntry} onClose={() => setReviewEntry(null)} onSend={(draft) => sendReviewRequest(reviewEntry, draft)} /> : null}
+      {reviewIntent ? <ReviewRequestModal
+        entry={reviewIntent.entry}
+        initialKind={reviewIntent.kind}
+        onClose={() => setReviewIntent(null)}
+        onSend={(draft) => sendReviewRequest(reviewIntent.entry, draft)}
+      /> : null}
       {deleteEntryTarget ? <DeleteDueModal entry={deleteEntryTarget} onClose={() => setDeleteEntryTarget(null)} onDelete={deleteDue} /> : null}
       {deleteContactTarget ? <DeleteContactModal person={deleteContactTarget} onClose={() => setDeleteContactTarget(null)} onDelete={deleteContact} /> : null}
       {toast && <div className="toast" role="status"><CheckCircle2 size={18} /> {toast}</div>}

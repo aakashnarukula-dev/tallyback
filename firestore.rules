@@ -32,6 +32,7 @@ service cloud.firestore {
     function validPendingReview(review, entry) {
       return review is map
         && review.keys().hasAll([
+          'reviewId',
           'requestedByUid',
           'requestedByPhone',
           'kind',
@@ -40,11 +41,13 @@ service cloud.firestore {
           'proposedOccasion',
           'proposedDate',
           'note',
+          'proofScreenshots',
           'status',
           'createdAt',
           'updatedAt'
         ])
         && review.keys().hasOnly([
+          'reviewId',
           'requestedByUid',
           'requestedByPhone',
           'kind',
@@ -53,10 +56,14 @@ service cloud.firestore {
           'proposedOccasion',
           'proposedDate',
           'note',
+          'proofScreenshots',
           'status',
           'createdAt',
           'updatedAt'
         ])
+        && review.reviewId is string
+        && review.reviewId.size() > 0
+        && review.reviewId.size() <= 128
         && review.requestedByUid is string
         && review.requestedByPhone is string
         && review.requestedByPhone == entry.borrowerPhone
@@ -74,6 +81,9 @@ service cloud.firestore {
         )
         && review.note is string
         && review.note.size() <= 280
+        && review.proofScreenshots is list
+        && review.proofScreenshots.size() <= 5
+        && (review.kind != 'paid' || review.proofScreenshots.size() > 0)
         && review.status == 'pending'
         && review.createdAt is timestamp
         && review.updatedAt is timestamp
@@ -111,6 +121,87 @@ service cloud.firestore {
           && (data.screenshots.size() < 5
             || validScreenshot(data.screenshots[4]))
         );
+    }
+
+    function validReviewRecordCreate(reviewId, data) {
+      let entry = getAfter(/databases/$(database)/documents/ledgerEntries/$(data.entryId)).data;
+      return data.keys().hasAll([
+          'entryId',
+          'entryCreatedBy',
+          'lender',
+          'borrower',
+          'lenderPhone',
+          'borrowerPhone',
+          'participantPhones',
+          'requestedByUid',
+          'requestedByPhone',
+          'kind',
+          'originalAmount',
+          'originalMethod',
+          'originalOccasion',
+          'originalDate',
+          'proposedAmount',
+          'proposedMethod',
+          'proposedOccasion',
+          'proposedDate',
+          'note',
+          'proofScreenshots',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'entryId',
+          'entryCreatedBy',
+          'lender',
+          'borrower',
+          'lenderPhone',
+          'borrowerPhone',
+          'participantPhones',
+          'requestedByUid',
+          'requestedByPhone',
+          'resolvedByUid',
+          'kind',
+          'originalAmount',
+          'originalMethod',
+          'originalOccasion',
+          'originalDate',
+          'proposedAmount',
+          'proposedMethod',
+          'proposedOccasion',
+          'proposedDate',
+          'note',
+          'proofScreenshots',
+          'status',
+          'createdAt',
+          'resolvedAt',
+          'updatedAt'
+        ])
+        && entry.keys().hasAny(['review'])
+        && entry.review.reviewId == reviewId
+        && data.entryCreatedBy == entry.createdBy
+        && data.lender == entry.lender
+        && data.borrower == entry.borrower
+        && data.lenderPhone == entry.lenderPhone
+        && data.borrowerPhone == entry.borrowerPhone
+        && data.participantPhones == entry.participantPhones
+        && data.requestedByUid == entry.review.requestedByUid
+        && data.requestedByPhone == entry.review.requestedByPhone
+        && data.kind == entry.review.kind
+        && data.originalAmount == entry.amount
+        && data.originalMethod == entry.method
+        && data.originalOccasion == entry.occasion
+        && data.originalDate == entry.date
+        && data.proposedAmount == entry.review.proposedAmount
+        && data.proposedMethod == entry.review.proposedMethod
+        && data.proposedOccasion == entry.review.proposedOccasion
+        && data.proposedDate == entry.review.proposedDate
+        && data.note == entry.review.note
+        && data.proofScreenshots == entry.review.proofScreenshots
+        && data.status == 'pending'
+        && !data.keys().hasAny(['resolvedByUid', 'resolvedAt'])
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
     }
 
     function validEntry(data) {
@@ -288,35 +379,77 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
-      allow update: if isParticipant(resource.data)
-        && isParticipant(request.resource.data)
-        && validEntry(request.resource.data)
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && (
+      // The targeted review branches run before the full-schema lender branch,
+      // keeping atomic review/audit writes below Firestore's expression limit.
+      allow update: if (
+          isParticipant(resource.data)
+          && phone() == resource.data.borrowerPhone
+          && request.auth.uid != resource.data.createdBy
+          && resource.data.status == 'open'
+          && !resource.data.keys().hasAny(['review'])
+          && request.resource.data.keys().hasAny(['review'])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['review', 'updatedAt'])
+          && validPendingReview(request.resource.data.review, resource.data)
+          && request.resource.data.review.requestedByUid == request.auth.uid
+          && request.resource.data.review.requestedByPhone == phone()
+          && request.resource.data.review.createdAt == request.time
+          && request.resource.data.review.updatedAt == request.time
+          && request.resource.data.updatedAt == request.time
+        )
+        || (
+          isParticipant(resource.data)
+          && request.auth.uid == resource.data.createdBy
+          && resource.data.status == 'open'
+          && resource.data.keys().hasAny(['review'])
+          && !request.resource.data.keys().hasAny(['review'])
+          && request.resource.data.updatedAt == request.time
+          && (
+            (
+              resource.data.review.kind == 'amount'
+              && request.resource.data.status == 'open'
+              && request.resource.data.amount == resource.data.review.proposedAmount
+              && request.resource.data.method == resource.data.review.proposedMethod
+              && request.resource.data.occasion == resource.data.review.proposedOccasion
+              && request.resource.data.date == resource.data.review.proposedDate
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['amount', 'method', 'occasion', 'date', 'review', 'updatedAt'])
+            )
+            ||
+            (
+              resource.data.review.kind == 'paid'
+              && request.resource.data.status == 'settled'
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'settledAt', 'review', 'updatedAt'])
+            )
+            ||
+            (
+              request.resource.data.status == 'open'
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['review', 'updatedAt'])
+            )
+          )
+        )
+        || (
+          isParticipant(resource.data)
+          && request.auth.uid == resource.data.createdBy
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && (
           (
-            request.auth.uid == resource.data.createdBy
-            &&
             !resource.data.keys().hasAny(['review'])
-            &&
-            request.resource.data.diff(resource.data).affectedKeys()
+            && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['status', 'settledAt', 'updatedAt'])
             && resource.data.status == 'open'
             && request.resource.data.status == 'settled'
           )
           ||
           (
-            request.auth.uid == resource.data.createdBy
-            && resource.data.status == 'open'
+            resource.data.status == 'open'
             && request.resource.data.status == 'open'
             && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly([
-                'lender',
-                'borrower',
-                'lenderPhone',
-                'borrowerPhone',
-                'participantPhones',
                 'amount',
                 'occasion',
                 'method',
@@ -324,78 +457,40 @@ service cloud.firestore {
                 'screenshots',
                 'updatedAt'
               ])
+            && request.resource.data.amount is number
+            && request.resource.data.amount > 0
+            && request.resource.data.occasion is string
+            && request.resource.data.occasion.size() > 0
+            && request.resource.data.occasion.size() <= 80
+            && request.resource.data.method in ['UPI', 'Credit card', 'Cash', 'Bank transfer', 'Personal funds']
+            && request.resource.data.date is string
+            && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && validScreenshots(request.resource.data)
           )
-          ||
-          (
-            phone() == resource.data.borrowerPhone
-            && request.auth.uid != resource.data.createdBy
-            && resource.data.status == 'open'
-            && !resource.data.keys().hasAny(['review'])
-            && request.resource.data.keys().hasAny(['review'])
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['review', 'updatedAt'])
-            && request.resource.data.review.requestedByUid == request.auth.uid
-            && request.resource.data.review.requestedByPhone == phone()
-            && request.resource.data.review.createdAt == request.time
-            && request.resource.data.review.updatedAt == request.time
-          )
-          ||
-          (
-            request.auth.uid == resource.data.createdBy
-            && resource.data.status == 'open'
-            && resource.data.keys().hasAny(['review'])
-            && !request.resource.data.keys().hasAny(['review'])
-            && (
-              (
-                resource.data.review.kind == 'amount'
-                && request.resource.data.status == 'open'
-                && request.resource.data.amount == resource.data.review.proposedAmount
-                && (
-                  (
-                    resource.data.review.keys().hasAll([
-                      'proposedMethod',
-                      'proposedOccasion',
-                      'proposedDate'
-                    ])
-                    && request.resource.data.method == resource.data.review.proposedMethod
-                    && request.resource.data.occasion == resource.data.review.proposedOccasion
-                    && request.resource.data.date == resource.data.review.proposedDate
-                    && request.resource.data.diff(resource.data).affectedKeys()
-                      .hasOnly(['amount', 'method', 'occasion', 'date', 'review', 'updatedAt'])
-                  )
-                  ||
-                  (
-                    !resource.data.review.keys().hasAny([
-                      'proposedMethod',
-                      'proposedOccasion',
-                      'proposedDate'
-                    ])
-                    && request.resource.data.diff(resource.data).affectedKeys()
-                      .hasOnly(['amount', 'review', 'updatedAt'])
-                  )
-                )
-              )
-              ||
-              (
-                resource.data.review.kind == 'paid'
-                && request.resource.data.status == 'settled'
-                && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['status', 'settledAt', 'review', 'updatedAt'])
-              )
-              ||
-              (
-                request.resource.data.status == 'open'
-                && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['review', 'updatedAt'])
-              )
-            )
-          )
-        );
+        ));
       allow delete: if false;
     }
 
     match /ledgerReviews/{reviewId} {
-      allow read, write: if false;
+      allow read: if isParticipant(resource.data);
+      allow create: if signedInWithPhone()
+        && validReviewRecordCreate(reviewId, request.resource.data)
+        && request.resource.data.borrowerPhone == phone()
+        && request.resource.data.requestedByPhone == phone()
+        && request.resource.data.requestedByUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isParticipant(resource.data)
+        && phone() == resource.data.lenderPhone
+        && request.auth.uid == resource.data.entryCreatedBy
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'resolvedByUid', 'resolvedAt', 'updatedAt'])
+        && request.resource.data.resolvedByUid == request.auth.uid
+        && request.resource.data.resolvedAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
     }
 
     match /splitPages/{splitId} {

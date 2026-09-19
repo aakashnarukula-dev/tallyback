@@ -1,11 +1,16 @@
 import {
+  collection,
   deleteField,
   doc,
+  onSnapshot,
+  query,
   runTransaction,
   serverTimestamp,
+  writeBatch,
   updateDoc,
+  where,
 } from 'firebase/firestore'
-import { getSplitLedgerReference, LedgerEntry, LedgerReview, PaymentMethod, ReviewKind } from './data'
+import { getSplitLedgerReference, LedgerEntry, LedgerReview, LedgerReviewRecord, PaymentMethod, PaymentScreenshot, ReviewKind } from './data'
 import { db } from './firebase'
 import { toE164 } from './firebase-ledger'
 
@@ -16,6 +21,7 @@ export type ReviewDraft = {
   proposedOccasion: string
   proposedDate: string
   note: string
+  proofScreenshots: PaymentScreenshot[]
 }
 
 function requireDatabase() {
@@ -24,30 +30,83 @@ function requireDatabase() {
 }
 
 export async function createReviewRequest(entry: LedgerEntry, uid: string, draft: ReviewDraft) {
+  if (!entry.createdBy) throw new Error('This entry is missing its owner.')
+  const database = requireDatabase()
   const borrowerPhone = toE164(entry.borrower.phone)
+  const lenderPhone = toE164(entry.lender.phone)
+  const entryRef = doc(database, 'ledgerEntries', entry.id)
+  const reviewRef = doc(collection(database, 'ledgerReviews'))
+  const review: Omit<LedgerReview, 'createdAt' | 'updatedAt'> & { createdAt: unknown; updatedAt: unknown } = {
+    reviewId: reviewRef.id,
+    requestedByUid: uid,
+    requestedByPhone: borrowerPhone,
+    kind: draft.kind,
+    proposedAmount: draft.kind === 'amount' ? draft.proposedAmount : 0,
+    proposedMethod: draft.proposedMethod,
+    proposedOccasion: draft.proposedOccasion.trim().slice(0, 80),
+    proposedDate: draft.proposedDate,
+    note: draft.note.trim().slice(0, 280),
+    proofScreenshots: draft.proofScreenshots,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }
 
-  await updateDoc(doc(requireDatabase(), 'ledgerEntries', entry.id), {
-    review: {
-      requestedByUid: uid,
-      requestedByPhone: borrowerPhone,
-      kind: draft.kind,
-      proposedAmount: draft.kind === 'amount' ? draft.proposedAmount : 0,
-      proposedMethod: draft.proposedMethod,
-      proposedOccasion: draft.proposedOccasion.trim().slice(0, 80),
-      proposedDate: draft.proposedDate,
-      note: draft.note.trim().slice(0, 280),
-      status: 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    },
+  const batch = writeBatch(database)
+  batch.set(reviewRef, {
+    entryId: entry.id,
+    entryCreatedBy: entry.createdBy,
+    lender: { ...entry.lender, phone: lenderPhone },
+    borrower: { ...entry.borrower, phone: borrowerPhone },
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    requestedByUid: uid,
+    requestedByPhone: borrowerPhone,
+    kind: draft.kind,
+    originalAmount: entry.amount,
+    originalMethod: entry.method,
+    originalOccasion: entry.occasion,
+    originalDate: entry.date,
+    proposedAmount: review.proposedAmount,
+    proposedMethod: review.proposedMethod,
+    proposedOccasion: review.proposedOccasion,
+    proposedDate: review.proposedDate,
+    note: review.note,
+    proofScreenshots: review.proofScreenshots,
+    status: 'pending',
+    createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
+  batch.update(entryRef, {
+    review,
+    updatedAt: serverTimestamp(),
+  })
+  await batch.commit()
+}
+
+export function subscribeToReviewRecords(
+  phone: string,
+  onRecords: (records: LedgerReviewRecord[]) => void,
+  onError: (error: Error) => void,
+) {
+  const reviewsQuery = query(
+    collection(requireDatabase(), 'ledgerReviews'),
+    where('participantPhones', 'array-contains', toE164(phone)),
+  )
+  return onSnapshot(reviewsQuery, (snapshot) => {
+    onRecords(snapshot.docs.map((snapshotDoc) => ({
+      id: snapshotDoc.id,
+      ...snapshotDoc.data(),
+    } as LedgerReviewRecord)))
+  }, onError)
 }
 
 export async function resolveReviewRequest(
   review: LedgerReview,
   entry: LedgerEntry,
   decision: 'approved' | 'rejected',
+  resolvedByUid: string,
 ) {
   const database = requireDatabase()
   const entryRef = doc(database, 'ledgerEntries', entry.id)
@@ -70,7 +129,19 @@ export async function resolveReviewRequest(
 
   const splitReference = decision === 'approved' ? getSplitLedgerReference(entry.id) : null
   if (!splitReference) {
-    await updateDoc(entryRef, updates)
+    if (!review.reviewId) {
+      await updateDoc(entryRef, updates)
+      return
+    }
+    const batch = writeBatch(database)
+    batch.update(entryRef, updates)
+    batch.update(doc(database, 'ledgerReviews', review.reviewId), {
+      status: decision,
+      resolvedByUid,
+      resolvedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+    await batch.commit()
     return
   }
 
@@ -79,6 +150,14 @@ export async function resolveReviewRequest(
     const pageSnapshot = await transaction.get(pageRef)
     if (!pageSnapshot.exists()) {
       transaction.update(entryRef, updates)
+      if (review.reviewId) {
+        transaction.update(doc(database, 'ledgerReviews', review.reviewId), {
+          status: decision,
+          resolvedByUid,
+          resolvedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      }
       return
     }
 
@@ -108,5 +187,13 @@ export async function resolveReviewRequest(
       })
     }
     transaction.update(entryRef, updates)
+    if (review.reviewId) {
+      transaction.update(doc(database, 'ledgerReviews', review.reviewId), {
+        status: decision,
+        resolvedByUid,
+        resolvedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    }
   })
 }
