@@ -722,7 +722,6 @@ function AddPersonModal({
   const dragYRef = useRef(0)
   const workingRef = useRef(false)
   const closingRef = useRef(false)
-  const [dragY, setDragY] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [closing, setClosing] = useState(false)
 
@@ -733,7 +732,7 @@ function AddPersonModal({
     closingRef.current = true
     setClosing(true)
     setDragging(false)
-    closeTimerRef.current = window.setTimeout(onClose, 240)
+    closeTimerRef.current = window.setTimeout(onClose, 160)
   }
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -748,7 +747,7 @@ function AddPersonModal({
     if (!dragging || closingRef.current) return
     const nextDragY = Math.max(0, event.clientY - dragStartRef.current.y)
     dragYRef.current = nextDragY
-    setDragY(nextDragY)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', `${nextDragY}px`)
   }
 
   function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -762,7 +761,7 @@ function AddPersonModal({
     }
     dragYRef.current = 0
     setDragging(false)
-    setDragY(0)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', '0px')
   }
 
   useEffect(() => {
@@ -824,7 +823,7 @@ function AddPersonModal({
         aria-modal="true"
         aria-label="Add person"
         tabIndex={-1}
-        style={{ '--sheet-drag-y': `${dragY}px` } as CSSProperties}
+        style={{ '--sheet-drag-y': '0px' } as CSSProperties}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <button
@@ -908,7 +907,6 @@ function AddEntryModal({
   const draggingRef = useRef(false)
   const savingRef = useRef(false)
   const closingRef = useRef(false)
-  const [dragY, setDragY] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [closing, setClosing] = useState(false)
 
@@ -920,7 +918,7 @@ function AddEntryModal({
     draggingRef.current = false
     setClosing(true)
     setDragging(false)
-    closeTimerRef.current = window.setTimeout(onClose, 240)
+    closeTimerRef.current = window.setTimeout(onClose, 160)
   }
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -936,7 +934,7 @@ function AddEntryModal({
     if (!draggingRef.current || closingRef.current) return
     const nextDragY = Math.max(0, clientY - dragStartRef.current.y)
     dragYRef.current = nextDragY
-    setDragY(nextDragY)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', `${nextDragY}px`)
   }
 
   function finishDrag() {
@@ -950,7 +948,7 @@ function AddEntryModal({
     }
     dragYRef.current = 0
     setDragging(false)
-    setDragY(0)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', '0px')
   }
 
   useEffect(() => {
@@ -1151,7 +1149,7 @@ function AddEntryModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-entry-title"
-        style={{ '--sheet-drag-y': `${dragY}px` } as CSSProperties}
+        style={{ '--sheet-drag-y': '0px' } as CSSProperties}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <button
@@ -1765,7 +1763,6 @@ function PersonDrawer({
   const closeTimerRef = useRef<number | null>(null)
   const dragStartRef = useRef({ y: 0, time: 0 })
   const dragYRef = useRef(0)
-  const [dragY, setDragY] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [closing, setClosing] = useState(false)
 
@@ -1773,7 +1770,7 @@ function PersonDrawer({
     if (closing) return
     setClosing(true)
     setDragging(false)
-    closeTimerRef.current = window.setTimeout(onClose, 240)
+    closeTimerRef.current = window.setTimeout(onClose, 160)
   }
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -1788,7 +1785,7 @@ function PersonDrawer({
     if (!dragging || closing) return
     const nextDragY = Math.max(0, event.clientY - dragStartRef.current.y)
     dragYRef.current = nextDragY
-    setDragY(nextDragY)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', `${nextDragY}px`)
   }
 
   function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -1802,7 +1799,7 @@ function PersonDrawer({
     }
     dragYRef.current = 0
     setDragging(false)
-    setDragY(0)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', '0px')
   }
 
   useEffect(() => {
@@ -1831,7 +1828,7 @@ function PersonDrawer({
         aria-modal="true"
         aria-labelledby="person-ledger-title"
         tabIndex={-1}
-        style={{ '--sheet-drag-y': `${dragY}px` } as CSSProperties}
+        style={{ '--sheet-drag-y': '0px' } as CSSProperties}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <button

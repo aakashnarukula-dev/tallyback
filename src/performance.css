@@ -1,0 +1,66 @@
+/* Fast shared motion for every draggable bottom sheet. */
+.drawer-backdrop,
+.modal-backdrop {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.drawer-backdrop {
+  background: rgba(20, 39, 35, 0.5) !important;
+  transition: opacity 140ms linear !important;
+  will-change: opacity;
+}
+
+.person-drawer,
+.add-person-modal,
+.add-entry-modal,
+.review-modal {
+  transform: translate3d(0, var(--sheet-drag-y, 0px), 0);
+  backface-visibility: hidden;
+  will-change: transform;
+  contain: paint;
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+  animation-duration: 160ms !important;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.person-drawer.dragging,
+.add-person-modal.dragging,
+.add-entry-modal.dragging,
+.review-modal.dragging {
+  transition: none !important;
+}
+
+.person-drawer.closing,
+.add-person-modal.closing,
+.add-entry-modal.closing,
+.review-modal.closing {
+  transform: translate3d(0, 100%, 0) !important;
+}
+
+.drawer-entry,
+.review-request-card,
+.activity-row,
+.contact-ledger-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+
+.drawer-proof-panel,
+.payment-proof,
+.payment-proof-grid {
+  contain: layout paint;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-backdrop,
+  .modal-backdrop,
+  .person-drawer,
+  .add-person-modal,
+  .add-entry-modal,
+  .review-modal {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

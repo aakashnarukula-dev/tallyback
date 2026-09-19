@@ -9,6 +9,10 @@ import './styles.css'
 import './splits.css'
 import './pastel.css'
 import './hybrid.css'
+import './performance.css'
+import './performance.css'
+import './performance.css'
+import './performance.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
