@@ -1436,8 +1436,11 @@ select:focus-visible {
   }
 }
 
-body:has(.ledger-view-shell) {
+html:has(.ledger-view-shell),
+body:has(.ledger-view-shell),
+body:has(.ledger-view-shell) #root {
   height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -1497,6 +1500,24 @@ body:has(.ledger-view-shell) {
 }
 
 @media (max-width: 860px) {
+  body:has(.ledger-view-shell) {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+  }
+
+  .ledger-view-shell {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+  }
+
+  .ledger-view-shell .topbar {
+    position: relative;
+    top: auto;
+    z-index: 30;
+  }
+
   .ledger-view-shell .workspace {
     padding-bottom: calc(78px + env(safe-area-inset-bottom));
   }
