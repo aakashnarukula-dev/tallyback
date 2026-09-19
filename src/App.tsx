@@ -1384,9 +1384,6 @@ function PaymentScreenshotGallery({
       {activeScreenshot ? createPortal(
         <div className="screenshot-lightbox" role="presentation" onPointerDown={closeActiveScreenshot}>
           <section role="dialog" aria-modal="true" aria-label="Payment screenshot" onPointerDown={(event) => event.stopPropagation()}>
-            <button type="button" onClick={closeActiveScreenshot} aria-label="Close screenshot">
-              <X size={20} />
-            </button>
             <img src={activeScreenshot.url} alt={activeScreenshot.name} />
           </section>
         </div>,
