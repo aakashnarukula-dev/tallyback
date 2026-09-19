@@ -1204,8 +1204,8 @@ function AddEntryModal({
             <section className="payment-upload" aria-labelledby="payment-upload-title">
               <div className="payment-upload-heading">
                 <div>
-                  <strong id="payment-upload-title">Payment screenshots</strong>
-                  <span>Required · 1–5 images, 6 MB each</span>
+                  <strong id="payment-upload-title">Amount sent &amp; payment proof</strong>
+                  <span>Required · 1–5 screenshots, 6 MB each</span>
                 </div>
                 <button
                   className="payment-upload-button"
