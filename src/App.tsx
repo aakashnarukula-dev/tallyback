@@ -1496,104 +1496,131 @@ function ReviewRequestModal({
           </button>
         </div>
 
-        <div className="review-entry-context">
-          <span>{entry.occasion}</span>
-          <strong>{money.format(entry.amount)}</strong>
-          <small>Recorded by {entry.lender.name}</small>
+        <div className="review-entry-block">
+          <p className="review-section-label">Due being reviewed</p>
+          <div className="review-entry-context">
+            <div>
+              <span>{entry.occasion}</span>
+              <small>Recorded by {entry.lender.name}</small>
+            </div>
+            <strong>{money.format(entry.amount)}</strong>
+          </div>
         </div>
 
         <form onSubmit={submit}>
+          <div className="review-step-heading">
+            <span>1</span>
+            <div>
+              <strong>What happened?</strong>
+              <small>Choose the option that best describes the problem.</small>
+            </div>
+          </div>
           <div className="review-reason-picker" aria-label="Choose what is incorrect">
             <button type="button" className={kind === 'amount' ? 'active' : ''} aria-pressed={kind === 'amount'} onClick={() => setKind('amount')}>
               <Banknote size={18} />
-              <span><strong>Wrong details</strong><small>Suggest the correct due details</small></span>
+              <strong>Wrong details</strong>
               {kind === 'amount' ? <Check size={17} /> : null}
             </button>
             <button type="button" className={kind === 'paid' ? 'active' : ''} aria-pressed={kind === 'paid'} onClick={() => setKind('paid')}>
               <CheckCircle2 size={18} />
-              <span><strong>Already paid</strong><small>Ask them to close this entry</small></span>
+              <strong>Already paid</strong>
               {kind === 'paid' ? <Check size={17} /> : null}
             </button>
           </div>
+          <p className="review-choice-help">
+            {kind === 'amount'
+              ? 'Correct the amount, payment method, purpose, or date.'
+              : 'Share proof that you sent the payment and ask the lender to close this due.'}
+          </p>
 
-          {kind === 'amount' ? (
-            <div className="review-details-grid">
-              <label className="review-detail-field">
-                Amount
-                <div className="money-input">
-                  <span>₹</span>
-                  <input
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
-                    inputMode="decimal"
-                    autoFocus
-                  />
-                </div>
-              </label>
-              <label className="review-detail-field">
-                Paid using
-                <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
-                  {methods.map((item) => <option key={item}>{item}</option>)}
-                </select>
-              </label>
-              <label className="review-detail-field">
-                What was it for?
-                <input value={occasion} onChange={(event) => setOccasion(event.target.value)} />
-              </label>
-              <div className="review-detail-field form-field">
-                <span>Date</span>
-                <DatePicker value={date} onChange={setDate} />
+          <div className="review-response-section">
+            <div className="review-step-heading">
+              <span>2</span>
+              <div>
+                <strong>{kind === 'amount' ? 'Add the correct details' : 'Add payment proof'}</strong>
+                <small>{kind === 'amount' ? 'Only changed details will be sent for review.' : 'At least one screenshot is required.'}</small>
               </div>
             </div>
-          ) : null}
 
-          {kind === 'paid' ? (
-            <section className="review-proof-upload">
-              <div>
-                <strong>Payment proof</strong>
-                <span>Required · 1–5 images, 6 MB each</span>
-              </div>
-              <input
-                ref={proofInputRef}
-                type="file"
-                accept={acceptedScreenshotTypes.join(',')}
-                multiple
-                hidden
-                onChange={addProofFiles}
-              />
-              <button
-                type="button"
-                className="payment-upload-button"
-                onClick={() => proofInputRef.current?.click()}
-                disabled={proofFiles.length >= MAX_PAYMENT_SCREENSHOTS}
-              >
-                <ImagePlus size={17} /> Add proof
-              </button>
-              {proofFiles.length ? (
-                <div className="review-proof-files">
-                  {proofFiles.map((file, index) => (
-                    <div key={`${file.name}-${file.lastModified}-${index}`}>
-                      <ImageIcon size={16} />
-                      <span>{file.name}</span>
-                      <button type="button" onClick={() => setProofFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${file.name}`}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
+            {kind === 'amount' ? (
+              <div className="review-details-grid">
+                <label className="review-detail-field">
+                  Amount
+                  <div className="money-input">
+                    <span>₹</span>
+                    <input
+                      value={amount}
+                      onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
+                      inputMode="decimal"
+                      autoFocus
+                    />
+                  </div>
+                </label>
+                <label className="review-detail-field">
+                  Paid using
+                  <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
+                    {methods.map((item) => <option key={item}>{item}</option>)}
+                  </select>
+                </label>
+                <label className="review-detail-field">
+                  What was it for?
+                  <input value={occasion} onChange={(event) => setOccasion(event.target.value)} />
+                </label>
+                <div className="review-detail-field form-field">
+                  <span>Date</span>
+                  <DatePicker value={date} onChange={setDate} />
                 </div>
-              ) : null}
-            </section>
-          ) : null}
+              </div>
+            ) : null}
 
-          <label className="review-field">
-            Note <span>(optional)</span>
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value.slice(0, 280))}
-              placeholder={kind === 'amount' ? 'Explain what looks wrong…' : 'Mention when or how you paid…'}
-              rows={3}
-            />
-          </label>
+            {kind === 'paid' ? (
+              <section className="review-proof-upload">
+                <div>
+                  <strong>Proof of payment</strong>
+                  <span>1–5 screenshots · 6 MB each</span>
+                </div>
+                <input
+                  ref={proofInputRef}
+                  type="file"
+                  accept={acceptedScreenshotTypes.join(',')}
+                  multiple
+                  hidden
+                  onChange={addProofFiles}
+                />
+                <button
+                  type="button"
+                  className="payment-upload-button"
+                  onClick={() => proofInputRef.current?.click()}
+                  disabled={proofFiles.length >= MAX_PAYMENT_SCREENSHOTS}
+                >
+                  <ImagePlus size={17} /> Add proof
+                </button>
+                {proofFiles.length ? (
+                  <div className="review-proof-files">
+                    {proofFiles.map((file, index) => (
+                      <div key={`${file.name}-${file.lastModified}-${index}`}>
+                        <ImageIcon size={16} />
+                        <span>{file.name}</span>
+                        <button type="button" onClick={() => setProofFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${file.name}`}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <label className="review-field">
+              Note <span>(optional)</span>
+              <textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value.slice(0, 280))}
+                placeholder={kind === 'amount' ? 'Explain what looks wrong…' : 'Mention when or how you paid…'}
+                rows={3}
+              />
+            </label>
+          </div>
           {error ? <p className="form-error">{error}</p> : null}
           <div className="modal-actions">
             <button className="secondary-button" type="button" onClick={onClose}>Cancel</button>
