@@ -113,6 +113,12 @@ type ActivityItem =
   | { id: string; timestamp: number; type: 'entry'; entry: LedgerEntry }
   | { id: string; timestamp: number; type: 'review-request' | 'review-resolution'; review: LedgerReviewRecord }
 
+const PROFILE_NAME_PLACEHOLDERS = new Set(['', 'tallyback member', 'my account'])
+
+function hasProfileName(name?: string | null) {
+  return !PROFILE_NAME_PLACEHOLDERS.has(name?.trim().toLowerCase() ?? '')
+}
+
 function timestampMillis(value: unknown) {
   if (value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
     return (value as { toMillis: () => number }).toMillis()
@@ -698,6 +704,82 @@ function LoginScreen({
         </form>
       </section>
     </main>
+  )
+}
+
+function RequiredNameModal({ onSave }: { onSave: (name: string) => Promise<void> }) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
+
+  async function submitName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const cleanName = name.trim()
+    if (!hasProfileName(cleanName)) {
+      setError('Enter your name to continue.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    try {
+      await onSave(cleanName)
+    } catch (saveError) {
+      console.error('[profile/name]', saveError)
+      setError(saveError instanceof Error ? saveError.message : 'Could not save your name. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="required-name-backdrop">
+      <section
+        className="required-name-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="required-name-title"
+        aria-describedby="required-name-description"
+      >
+        <div className="required-name-handle" aria-hidden="true" />
+        <p className="required-name-eyebrow">One last step</p>
+        <h2 id="required-name-title">What should we call you?</h2>
+        <p id="required-name-description" className="required-name-description">
+          This name appears on dues you share with other people.
+        </p>
+
+        <form onSubmit={submitName} className="required-name-form">
+          <label htmlFor="required-profile-name">Your name</label>
+          <input
+            id="required-profile-name"
+            type="text"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value)
+              if (error) setError('')
+            }}
+            placeholder="Aakash"
+            autoComplete="name"
+            enterKeyHint="done"
+            maxLength={60}
+            disabled={saving}
+            required
+          />
+          {error && <p className="required-name-error" role="alert">{error}</p>}
+          <button type="submit" disabled={saving || !hasProfileName(name)}>
+            {saving ? 'Saving…' : 'Save name'}
+          </button>
+        </form>
+      </section>
+    </div>
   )
 }
 
@@ -2557,6 +2639,22 @@ function TallyBackApp() {
     setAddDuePerson(person)
   }
 
+  async function saveRequiredProfileName(name: string) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser || !currentUser) {
+      throw new Error('Your session expired. Sign in again.')
+    }
+
+    const cleanName = name.trim()
+    if (!hasProfileName(cleanName)) throw new Error('Enter your name to continue.')
+
+    const nextUser = { ...currentUser, name: cleanName }
+    await saveUserProfile(firebaseUser.uid, nextUser)
+    setCurrentUser(nextUser)
+  }
+
+  const requiresProfileName = Boolean(currentUser && !hasProfileName(currentUser.name))
+
   if (authLoading) return null
 
   if (!currentUser) {
@@ -2565,6 +2663,9 @@ function TallyBackApp() {
 
   return (
     <div className={`app-shell ${view === 'ledger' ? 'ledger-view-shell' : ''}`}>
+      {requiresProfileName
+        ? createPortal(<RequiredNameModal onSave={saveRequiredProfileName} />, document.body)
+        : null}
       <aside className="sidebar">
         <a className="brand" href="#" aria-label="TallyBack home">
           <BrandMark />
