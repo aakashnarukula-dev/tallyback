@@ -11,9 +11,11 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
+import { activityDocument } from './firebase-activity'
 import { LedgerEntry, normalizePhone, Person } from './data'
 import { db } from './firebase'
 import { toE164 } from './firebase-ledger'
+import { entryOriginalAmount, entryPaidAmount } from './ledger-calculations'
 
 export type SplitRecipient = {
   id: string
@@ -129,6 +131,16 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
     }
   })
 
+  const ledgerEntryIds = new Set([
+    ...nextRecipients.map((row) => row.ledgerEntryId).filter(Boolean),
+    ...(existingPage?.recipients ?? []).map((row) => row.ledgerEntryId).filter(Boolean),
+  ] as string[])
+  const ledgerSnapshots = await Promise.all([...ledgerEntryIds].map(async (entryId) => {
+    const snapshot = await getDoc(doc(database, 'ledgerEntries', entryId))
+    return [entryId, snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } as LedgerEntry : null] as const
+  }))
+  const existingLedgerEntries = new Map(ledgerSnapshots)
+
   const batch = writeBatch(database)
   batch.set(pageRef, {
     title,
@@ -155,7 +167,15 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
     const existingRecipient = existingRecipients.get(row.id)
     if (existingRecipient?.status === 'paid') return
 
-    const entryRef = doc(database, 'ledgerEntries', publicRow.ledgerEntryId!)
+    const entryId = publicRow.ledgerEntryId!
+    const entryRef = doc(database, 'ledgerEntries', entryId)
+    const existingLedgerEntry = existingLedgerEntries.get(entryId)
+    const paidAmount = publicRow.status === 'paid'
+      ? row.amount
+      : existingLedgerEntry ? entryPaidAmount(existingLedgerEntry) : 0
+    if (row.amount < paidAmount) throw new Error(`${row.name}'s share cannot be less than approved payments.`)
+    const remainingAmount = Math.max(0, row.amount - paidAmount)
+    const status = remainingAmount === 0 ? 'paid' : paidAmount > 0 ? 'partially_paid' : 'open'
     const entry: Omit<LedgerEntry, 'id'> & Record<string, unknown> = {
       lender: { name: owner.name, phone: toE164(owner.phone) },
       borrower: { name: row.name, phone: toE164(row.phone) },
@@ -163,26 +183,55 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
       borrowerPhone: toE164(row.phone),
       participantPhones: [toE164(owner.phone), toE164(row.phone)],
       amount: row.amount,
+      originalAmount: row.amount,
+      paidAmount,
+      remainingAmount,
       occasion: title,
       method: 'Personal funds',
       date: new Date().toISOString().slice(0, 10),
-      status: publicRow.status === 'paid' ? 'settled' : 'open',
+      status,
       createdBy: uid,
       updatedAt: serverTimestamp(),
     }
     if (!existingRecipient) entry.createdAt = serverTimestamp()
     batch.set(entryRef, entry, { merge: Boolean(existingRecipient) })
+    const activityEntry = { id: entryId, ...entry } as LedgerEntry
+    const activity = activityDocument(
+      activityEntry,
+      uid,
+      owner,
+      existingRecipient ? 'due_edited' : 'due_created',
+      entryId,
+      { amount: row.amount, status },
+    )
+    batch.set(activity.ref, activity.data)
   })
 
   for (const oldRecipient of existingPage?.recipients || []) {
     if (nextRecipients.some((row) => row.id === oldRecipient.id)) continue
     batch.delete(doc(database, 'splitPages', splitId, 'contacts', oldRecipient.id))
     if (oldRecipient.ledgerEntryId && oldRecipient.status !== 'paid') {
+      const oldEntry = existingLedgerEntries.get(oldRecipient.ledgerEntryId)
+      const originalAmount = oldEntry ? entryOriginalAmount(oldEntry) : oldRecipient.amount
       batch.update(doc(database, 'ledgerEntries', oldRecipient.ledgerEntryId), {
-        status: 'settled',
+        originalAmount,
+        paidAmount: originalAmount,
+        remainingAmount: 0,
+        status: 'paid',
         settledAt: new Date().toISOString(),
         updatedAt: serverTimestamp(),
       })
+      if (oldEntry) {
+        const activity = activityDocument(
+          { ...oldEntry, originalAmount, paidAmount: originalAmount, remainingAmount: 0, status: 'paid' },
+          uid,
+          owner,
+          'due_marked_paid',
+          oldEntry.id,
+          { amount: Math.max(0, originalAmount - entryPaidAmount(oldEntry)), status: 'paid' },
+        )
+        batch.set(activity.ref, activity.data)
+      }
     }
   }
 
@@ -200,17 +249,34 @@ export async function markSplitRecipientPaid(splitId: string, recipientId: strin
     if (page.ownerUid !== uid) throw new Error('Only the split owner can record an offline payment.')
     const recipient = page.recipients.find((row) => row.id === recipientId)
     if (!recipient) throw new Error('This person is no longer in the split.')
+    const entryRef = recipient.ledgerEntryId ? doc(database, 'ledgerEntries', recipient.ledgerEntryId) : null
+    const entrySnapshot = entryRef ? await transaction.get(entryRef) : null
     const paidAt = new Date().toISOString()
     transaction.update(pageRef, {
       recipients: page.recipients.map((row) => row.id === recipientId ? { ...row, status: 'paid', paidAt } : row),
       updatedAt: serverTimestamp(),
     })
-    if (recipient.ledgerEntryId) {
-      transaction.update(doc(database, 'ledgerEntries', recipient.ledgerEntryId), {
-        status: 'settled',
+    if (entryRef && entrySnapshot?.exists()) {
+      const entry = { id: entrySnapshot.id, ...entrySnapshot.data() } as LedgerEntry
+      const originalAmount = entryOriginalAmount(entry)
+      const remainingAmount = Math.max(0, originalAmount - entryPaidAmount(entry))
+      transaction.update(entryRef, {
+        originalAmount,
+        paidAmount: originalAmount,
+        remainingAmount: 0,
+        status: 'paid',
         settledAt: paidAt,
         updatedAt: serverTimestamp(),
       })
+      const activity = activityDocument(
+        { ...entry, originalAmount, paidAmount: originalAmount, remainingAmount: 0, status: 'paid' },
+        uid,
+        entry.lender,
+        'due_marked_paid',
+        entry.id,
+        { amount: remainingAmount, status: 'paid' },
+      )
+      transaction.set(activity.ref, activity.data)
     }
   })
 }

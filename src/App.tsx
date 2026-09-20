@@ -41,6 +41,7 @@ import {
   X,
 } from 'lucide-react'
 import {
+  LedgerActivity,
   getSplitLedgerReference,
   LedgerEntry,
   LedgerReview,
@@ -49,6 +50,7 @@ import {
   PaymentScreenshot,
   PaymentMethod,
   Person,
+  RepaymentRequest,
   ReviewKind,
   SavedContact,
 } from './data'
@@ -60,6 +62,7 @@ import {
   saveUserProfile,
   settleEntry as settleFirebaseEntry,
   subscribeToEntries,
+  syncParticipantName,
   toE164,
   updateEntry as updateFirebaseEntry,
 } from './firebase-ledger'
@@ -77,6 +80,13 @@ import {
   ReviewDraft,
   subscribeToReviewRecords,
 } from './firebase-reviews'
+import { subscribeToActivities } from './firebase-activity'
+import {
+  createRepaymentRequest,
+  RepaymentDraft,
+  resolveRepaymentRequest,
+  subscribeToRepaymentRequests,
+} from './firebase-repayments'
 import {
   acceptedScreenshotTypes,
   deletePaymentScreenshots,
@@ -94,6 +104,14 @@ import {
 } from './truecaller'
 import SplitPublicPage from './SplitPublicPage'
 import SplitWorkspace from './SplitWorkspace'
+import {
+  canonicalEntryStatus,
+  entryOriginalAmount,
+  entryPaidAmount,
+  entryRemainingAmount,
+  isPaidEntry,
+  outstandingTotals,
+} from './ledger-calculations'
 
 type Direction = 'receivable' | 'payable'
 type View = 'ledger' | 'activity' | 'splits'
@@ -109,13 +127,19 @@ type ReviewSubmissionDraft = Omit<ReviewDraft, 'proofScreenshots'> & {
   proofFiles: File[]
 }
 
+type RepaymentSubmissionDraft = Omit<RepaymentDraft, 'proofScreenshots'> & {
+  proofFiles: File[]
+}
+
 type ActivityItem =
-  | { id: string; timestamp: number; type: 'entry'; entry: LedgerEntry }
-  | { id: string; timestamp: number; type: 'review-request' | 'review-resolution'; review: LedgerReviewRecord }
+  | { id: string; timestamp: number; kind: 'activity'; activity: LedgerActivity }
+  | { id: string; timestamp: number; kind: 'entry'; entry: LedgerEntry }
+  | { id: string; timestamp: number; kind: 'review-request' | 'review-resolution'; review: LedgerReviewRecord }
+  | { id: string; timestamp: number; kind: 'repayment-request' | 'repayment-resolution'; repayment: RepaymentRequest }
 
 const PROFILE_NAME_PLACEHOLDERS = new Set(['', 'tallyback member', 'my account'])
 
-function hasProfileName(name?: string | null) {
+export function hasProfileName(name?: string | null) {
   return !PROFILE_NAME_PLACEHOLDERS.has(name?.trim().toLowerCase() ?? '')
 }
 
@@ -138,6 +162,14 @@ const shortDate = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
+})
+
+const dateTime = new Intl.DateTimeFormat('en-IN', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
 })
 
 const methodIcons: Record<PaymentMethod, typeof CreditCard> = {
@@ -394,6 +426,17 @@ function firebaseErrorDetails(error: unknown) {
     code: typeof firebaseError.code === 'string' ? firebaseError.code : '',
     message: typeof firebaseError.message === 'string' ? firebaseError.message : String(error),
   }
+}
+
+function actionableFirebaseError(error: unknown, fallback: string) {
+  const { code, message } = firebaseErrorDetails(error)
+  if (message && !message.startsWith('FirebaseError:') && !message.includes('Missing or insufficient permissions')) {
+    return message
+  }
+  if (code === 'storage/unauthorized' || code === 'permission-denied') return 'Access expired. Sign in again, then retry.'
+  if (code === 'storage/retry-limit-exceeded' || code === 'unavailable') return 'Connection interrupted. Check internet and retry.'
+  if (code === 'storage/quota-exceeded' || code === 'resource-exhausted') return 'Upload limit reached. Try again later.'
+  return fallback
 }
 
 async function getAuthenticatedPhone(user: User, forceRefresh = false) {
@@ -707,7 +750,7 @@ function LoginScreen({
   )
 }
 
-function RequiredNameModal({ onSave }: { onSave: (name: string) => Promise<void> }) {
+export function RequiredNameModal({ onSave }: { onSave: (name: string) => Promise<void> }) {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -715,8 +758,25 @@ function RequiredNameModal({ onSave }: { onSave: (name: string) => Promise<void>
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    window.history.pushState({ ...window.history.state, tallyBackRequiredName: true }, '', window.location.href)
+
+    const keepOpenOnBack = () => {
+      window.history.pushState({ ...window.history.state, tallyBackRequiredName: true }, '', window.location.href)
+    }
+    const blockEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    window.addEventListener('popstate', keepOpenOnBack)
+    window.addEventListener('keydown', blockEscape, true)
     return () => {
       document.body.style.overflow = previousOverflow
+      window.removeEventListener('popstate', keepOpenOnBack)
+      window.removeEventListener('keydown', blockEscape, true)
+      if (window.history.state?.tallyBackRequiredName) {
+        window.history.back()
+      }
     }
   }, [])
 
@@ -966,7 +1026,7 @@ function AddEntryModal({
   onClose: () => void
   onSave: (entry: LedgerEntry) => Promise<void>
 }) {
-  const [amount, setAmount] = useState(entry ? String(entry.amount) : '')
+  const [amount, setAmount] = useState(entry ? String(entryOriginalAmount(entry)) : '')
   const [occasion, setOccasion] = useState(entry?.occasion ?? '')
   const [method, setMethod] = useState<PaymentMethod>(entry?.method ?? 'UPI')
   const [date, setDate] = useState(entry?.date ?? today())
@@ -1179,6 +1239,10 @@ function AddEntryModal({
         method,
         date,
         status: entry?.status ?? 'open',
+        ...(typeof entry?.originalAmount === 'number' ? { originalAmount: entry.originalAmount } : {}),
+        ...(typeof entry?.paidAmount === 'number' ? { paidAmount: entry.paidAmount } : {}),
+        ...(typeof entry?.remainingAmount === 'number' ? { remainingAmount: entry.remainingAmount } : {}),
+        ...(entry?.lastRepaymentId ? { lastRepaymentId: entry.lastRepaymentId } : {}),
         ...(entry?.createdBy ? { createdBy: entry.createdBy } : {}),
         ...(entry?.review ? { review: entry.review } : {}),
         ...(existingScreenshots.length || uploadedScreenshots.length
@@ -1473,6 +1537,354 @@ function PaymentScreenshotGallery({
   )
 }
 
+function RepaymentModal({
+  entry,
+  onClose,
+  onSend,
+}: {
+  entry: LedgerEntry
+  onClose: () => void
+  onSend: (draft: RepaymentSubmissionDraft) => Promise<void>
+}) {
+  const remainingDue = entryRemainingAmount(entry)
+  const [amount, setAmount] = useState(String(remainingDue))
+  const [date, setDate] = useState(today())
+  const [method, setMethod] = useState<PaymentMethod>('UPI')
+  const [note, setNote] = useState('')
+  const [proofFiles, setProofFiles] = useState<Array<{ id: string; file: File; previewUrl: string }>>([])
+  const [activePreview, setActivePreview] = useState<{ url: string; name: string } | null>(null)
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const proofInputRef = useRef<HTMLInputElement>(null)
+  const sheetRef = useRef<HTMLElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const previewUrlsRef = useRef(new Set<string>())
+  const previewHistoryPushed = useRef(false)
+  const dragStartRef = useRef({ y: 0, time: 0 })
+  const dragYRef = useRef(0)
+  const workingRef = useRef(false)
+  const closingRef = useRef(false)
+
+  workingRef.current = working
+
+  function closeSheet() {
+    if (closingRef.current || workingRef.current) return
+    closingRef.current = true
+    setClosing(true)
+    setDragging(false)
+    closeTimerRef.current = window.setTimeout(onClose, 160)
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || closingRef.current || workingRef.current) return
+    dragStartRef.current = { y: event.clientY, time: performance.now() }
+    dragYRef.current = 0
+    setDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    const nextY = Math.max(0, event.clientY - dragStartRef.current.y)
+    dragYRef.current = nextY
+    sheetRef.current?.style.setProperty('--sheet-drag-y', `${nextY}px`)
+  }
+
+  function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    const elapsed = Math.max(performance.now() - dragStartRef.current.time, 1)
+    const velocity = dragYRef.current / elapsed
+    if (dragYRef.current > Math.min(130, window.innerHeight * 0.16) || (dragYRef.current > 28 && velocity > 0.55)) {
+      closeSheet()
+      return
+    }
+    dragYRef.current = 0
+    setDragging(false)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', '0px')
+  }
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      closeSheet()
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape, true)
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+      previewUrlsRef.current.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activePreview) return
+    window.history.pushState({ ...window.history.state, tallyBackScreenshot: true }, '', window.location.href)
+    previewHistoryPushed.current = true
+    const closeOnBack = () => {
+      previewHistoryPushed.current = false
+      setActivePreview(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      closePreview()
+    }
+    window.addEventListener('popstate', closeOnBack)
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => {
+      window.removeEventListener('popstate', closeOnBack)
+      window.removeEventListener('keydown', closeOnEscape, true)
+      if (previewHistoryPushed.current && window.history.state?.tallyBackScreenshot) {
+        previewHistoryPushed.current = false
+        window.history.back()
+      }
+    }
+  }, [activePreview])
+
+  function closePreview() {
+    if (previewHistoryPushed.current && window.history.state?.tallyBackScreenshot) {
+      window.history.back()
+      return
+    }
+    previewHistoryPushed.current = false
+    setActivePreview(null)
+  }
+
+  function addProofFiles(event: ChangeEvent<HTMLInputElement>) {
+    const incoming = Array.from(event.currentTarget.files ?? [])
+    event.currentTarget.value = ''
+    if (!incoming.length) return
+
+    const existingKeys = new Set(proofFiles.map(({ file }) => `${file.name}:${file.size}:${file.lastModified}`))
+    const accepted: File[] = []
+    let validationError = ''
+    incoming.forEach((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}`
+      if (!acceptedScreenshotTypes.includes(file.type)) {
+        validationError = 'Use PNG, JPG, or WebP screenshots.'
+        return
+      }
+      if (file.size > MAX_SCREENSHOT_SIZE) {
+        validationError = 'Each screenshot must be 6 MB or smaller.'
+        return
+      }
+      if (existingKeys.has(key)) return
+      existingKeys.add(key)
+      accepted.push(file)
+    })
+
+    const available = MAX_PAYMENT_SCREENSHOTS - proofFiles.length
+    if (accepted.length > available) validationError = 'Add no more than five screenshots.'
+    const next = accepted.slice(0, Math.max(0, available)).map((file) => {
+      const previewUrl = URL.createObjectURL(file)
+      previewUrlsRef.current.add(previewUrl)
+      return { id: `${file.name}-${file.size}-${file.lastModified}`, file, previewUrl }
+    })
+    if (next.length) setProofFiles((current) => [...current, ...next])
+    setError(validationError)
+  }
+
+  function removeProof(id: string) {
+    setProofFiles((current) => current.filter((proof) => {
+      if (proof.id !== id) return true
+      URL.revokeObjectURL(proof.previewUrl)
+      previewUrlsRef.current.delete(proof.previewUrl)
+      return false
+    }))
+    setError('')
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const numericAmount = Number(amount)
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setError('Enter payment amount greater than zero.')
+      return
+    }
+    if (numericAmount > remainingDue) {
+      setError(`Amount cannot exceed remaining due of ${money.format(remainingDue)}.`)
+      return
+    }
+    if (!date) {
+      setError('Choose payment date.')
+      return
+    }
+    if (!proofFiles.length) {
+      setError('Add at least one payment-proof screenshot.')
+      return
+    }
+
+    try {
+      setWorking(true)
+      setError('')
+      await onSend({
+        amount: numericAmount,
+        method,
+        paidAt: date,
+        note,
+        proofFiles: proofFiles.map(({ file }) => file),
+      })
+      onClose()
+    } catch (sendError) {
+      setError(actionableFirebaseError(sendError, 'Payment request could not be sent. Check connection and retry.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div
+      className={`modal-backdrop repayment-backdrop ${closing ? 'closing' : ''}`}
+      role="presentation"
+      onPointerDown={(event) => { if (event.target === event.currentTarget) closeSheet() }}
+    >
+      <section
+        ref={sheetRef}
+        className={`modal-card repayment-modal ${dragging ? 'dragging' : ''} ${closing ? 'closing' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="repayment-title"
+        style={{ '--sheet-drag-y': '0px' } as CSSProperties}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button
+          className="add-entry-grabber"
+          type="button"
+          aria-label="Drag down to close record payment"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+        ><span /></button>
+        <div className="modal-header repayment-header">
+          <div>
+            <p className="modal-kicker">Offline repayment</p>
+            <h2 id="repayment-title">Record payment</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={closeSheet} aria-label="Close dialog" disabled={working}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="repayment-summary">
+          <div><span>{entry.occasion}</span><small>Remaining due</small></div>
+          <strong>{money.format(remainingDue)}</strong>
+        </div>
+
+        <form onSubmit={submit}>
+          <div className="repayment-fields">
+            <label>
+              Amount paid
+              <div className="money-input">
+                <span>₹</span>
+                <input
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
+                  inputMode="decimal"
+                  placeholder="0"
+                  disabled={working}
+                />
+              </div>
+            </label>
+            <div className="form-field">
+              <span>Payment date</span>
+              <DatePicker value={date} onChange={setDate} />
+            </div>
+            <label>
+              Payment method
+              <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)} disabled={working}>
+                {methods.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <section className="repayment-proof" aria-labelledby="repayment-proof-title">
+            <div className="repayment-proof-heading">
+              <div>
+                <strong id="repayment-proof-title">Payment proof</strong>
+                <span>Required · 1–5 screenshots · 6 MB each</span>
+              </div>
+              <button
+                className="payment-upload-button"
+                type="button"
+                onClick={() => proofInputRef.current?.click()}
+                disabled={working || proofFiles.length >= MAX_PAYMENT_SCREENSHOTS}
+              >
+                <ImagePlus size={16} /> Add screenshots
+              </button>
+              <input
+                ref={proofInputRef}
+                className="visually-hidden"
+                type="file"
+                accept={acceptedScreenshotTypes.join(',')}
+                multiple
+                onChange={addProofFiles}
+              />
+            </div>
+            {proofFiles.length ? (
+              <div className="repayment-preview-rail">
+                {proofFiles.map((proof, index) => (
+                  <figure key={proof.id} className="repayment-preview-card">
+                    <button type="button" className="repayment-preview-open" onClick={() => setActivePreview({ url: proof.previewUrl, name: proof.file.name })}>
+                      <img src={proof.previewUrl} alt={`Payment proof ${index + 1}`} />
+                    </button>
+                    <button type="button" className="repayment-preview-remove" onClick={() => removeProof(proof.id)} disabled={working}>
+                      <Trash2 size={12} /> Remove
+                    </button>
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <button type="button" className="repayment-proof-empty" onClick={() => proofInputRef.current?.click()} disabled={working}>
+                <ImageIcon size={20} /> Add screenshot showing completed payment
+              </button>
+            )}
+          </section>
+
+          <label className="repayment-note">
+            Note <span>(optional)</span>
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value.slice(0, 280))}
+              rows={2}
+              placeholder="Reference number or short note"
+              disabled={working}
+            />
+          </label>
+
+          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          <div className="modal-actions repayment-actions">
+            <button className="secondary-button" type="button" onClick={closeSheet} disabled={working}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={working}>
+              {working ? <LoaderCircle className="spin" size={16} /> : null}
+              {working ? 'Uploading & sending…' : 'Send for approval'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {activePreview ? createPortal(
+        <div className="screenshot-lightbox" role="presentation" onPointerDown={closePreview}>
+          <section role="dialog" aria-modal="true" aria-label="Payment screenshot" onPointerDown={(event) => event.stopPropagation()}>
+            <img src={activePreview.url} alt={activePreview.name} />
+          </section>
+        </div>,
+        document.body,
+      ) : null}
+    </div>
+  )
+}
+
 function ReviewRequestModal({
   entry,
   initialKind,
@@ -1485,7 +1897,7 @@ function ReviewRequestModal({
   onSend: (draft: ReviewSubmissionDraft) => Promise<void>
 }) {
   const [kind, setKind] = useState<ReviewDraft['kind']>(initialKind)
-  const [amount, setAmount] = useState(String(entry.amount))
+  const [amount, setAmount] = useState(String(entryOriginalAmount(entry)))
   const [method, setMethod] = useState<PaymentMethod>(entry.method)
   const [occasion, setOccasion] = useState(entry.occasion)
   const [date, setDate] = useState(entry.date)
@@ -1514,6 +1926,10 @@ function ReviewRequestModal({
       setError('Enter the amount you believe is correct.')
       return
     }
+    if (kind === 'amount' && proposedAmount < entryPaidAmount(entry)) {
+      setError(`Amount cannot be less than ${money.format(entryPaidAmount(entry))} already approved.`)
+      return
+    }
     if (kind === 'amount' && !occasion.trim()) {
       setError('Enter what the payment was for.')
       return
@@ -1524,7 +1940,7 @@ function ReviewRequestModal({
     }
     if (
       kind === 'amount'
-      && proposedAmount === entry.amount
+      && proposedAmount === entryOriginalAmount(entry)
       && method === entry.method
       && occasion.trim() === entry.occasion
       && date === entry.date
@@ -1583,7 +1999,7 @@ function ReviewRequestModal({
               <span>{entry.occasion}</span>
               <small>Recorded by {entry.lender.name}</small>
             </div>
-            <strong>{money.format(entry.amount)}</strong>
+            <strong>{money.format(entryRemainingAmount(entry))}</strong>
           </div>
         </div>
 
@@ -1802,11 +2218,76 @@ function DeleteContactModal({
   )
 }
 
+function RepaymentRequestCard({
+  request,
+  direction,
+  resolving,
+  onResolve,
+}: {
+  request: RepaymentRequest
+  direction: Direction
+  resolving: boolean
+  onResolve: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
+}) {
+  const statusLabel = request.status === 'pending'
+    ? 'Pending approval'
+    : request.status === 'accepted' ? 'Accepted' : 'Rejected'
+  return (
+    <article className={`repayment-request-card ${request.status}`}>
+      <header>
+        <div>
+          <span>{request.payerName}</span>
+          <small>paid {shortDate.format(new Date(`${request.paidAt}T00:00:00`))}</small>
+        </div>
+        <strong>{money.format(request.amount)}</strong>
+        <span className={`repayment-status ${request.status}`}>{statusLabel}</span>
+      </header>
+      <div className="repayment-request-details">
+        <span><CreditCard size={13} /> {request.method}</span>
+        <span><CalendarDays size={13} /> Submitted {dateTime.format(new Date(timestampMillis(request.createdAt)))}</span>
+      </div>
+      {request.note ? <p>{request.note}</p> : null}
+      <PaymentScreenshotGallery screenshots={request.proofScreenshots} />
+      {request.status === 'pending' && direction === 'receivable' ? (
+        <div className="repayment-review-actions">
+          <button type="button" className="repayment-reject" disabled={resolving} onClick={() => onResolve(request, 'rejected')}>
+            Reject
+          </button>
+          <button type="button" className="repayment-accept" disabled={resolving} onClick={() => onResolve(request, 'accepted')}>
+            {resolving ? 'Reviewing…' : 'Accept payment'}
+          </button>
+        </div>
+      ) : request.status === 'pending' ? (
+        <small className="repayment-waiting">Waiting for lender approval.</small>
+      ) : null}
+    </article>
+  )
+}
+
+function ReviewHistoryCard({ review }: { review: LedgerReviewRecord }) {
+  const status = review.status === 'approved' ? 'accepted' : review.status
+  return (
+    <article className={`review-history-card ${status}`}>
+      <header>
+        <strong>{review.kind === 'paid' ? 'Already paid review' : 'Correction review'}</strong>
+        <span className={`repayment-status ${status}`}>
+          {review.status === 'approved' ? 'Accepted' : review.status === 'rejected' ? 'Rejected' : 'Pending'}
+        </span>
+      </header>
+      <p>{review.note || (review.kind === 'paid' ? 'Payment proof submitted.' : 'Due details reviewed.')}</p>
+      {review.proofScreenshots.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} /> : null}
+    </article>
+  )
+}
+
 function PersonDrawer({
   summary,
   direction,
   pendingReviews,
+  repaymentRequests,
+  reviewHistory,
   resolvingReviewId,
+  resolvingRepaymentId,
   onClose,
   onAddDue,
   onEditDue,
@@ -1816,11 +2297,16 @@ function PersonDrawer({
   onSettle,
   onRequestReview,
   onResolveReview,
+  onRecordPayment,
+  onResolveRepayment,
 }: {
   summary: ContactSummary
   direction: Direction
   pendingReviews: Map<string, LedgerReview>
+  repaymentRequests: Map<string, RepaymentRequest[]>
+  reviewHistory: Map<string, LedgerReviewRecord[]>
   resolvingReviewId: string | null
+  resolvingRepaymentId: string | null
   onClose: () => void
   onAddDue: (person: Person) => void
   onEditDue: (entry: LedgerEntry) => void
@@ -1830,12 +2316,14 @@ function PersonDrawer({
   onSettle: (id: string) => void
   onRequestReview: (entry: LedgerEntry, kind: ReviewKind) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
+  onRecordPayment: (entry: LedgerEntry) => void
+  onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
 }) {
   const openDueEntries = summary.entries
-    .filter((entry) => entry.status === 'open')
+    .filter((entry) => !isPaidEntry(entry))
     .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
   const paidDueEntries = summary.entries
-    .filter((entry) => entry.status === 'settled')
+    .filter(isPaidEntry)
     .sort((a, b) => (
       (b.settledAt ?? `${b.date}T00:00:00`).localeCompare(a.settledAt ?? `${a.date}T00:00:00`)
       || b.id.localeCompare(a.id)
@@ -1976,14 +2464,22 @@ function PersonDrawer({
             const Icon = methodIcons[entry.method]
             const review = pendingReviews.get(entry.id)
             const splitReference = getSplitLedgerReference(entry.id)
+            const entryRepayments = repaymentRequests.get(entry.id) ?? []
+            const entryReviews = reviewHistory.get(entry.id) ?? []
+            const remainingAmount = entryRemainingAmount(entry)
+            const originalAmount = entryOriginalAmount(entry)
+            const partiallyPaid = canonicalEntryStatus(entry) === 'partially_paid'
             return (
-                <article className="drawer-entry" key={entry.id}>
+                <article className={`drawer-entry ${partiallyPaid ? 'drawer-entry-partial' : ''}`} key={entry.id}>
                   <span className="method-icon"><Icon size={17} /></span>
                   <div className="drawer-entry-copy">
                     <h4>{entry.occasion}</h4>
                     <p>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
                   </div>
-                  <strong className="drawer-entry-amount">{money.format(entry.amount)}</strong>
+                  <div className="drawer-entry-balance">
+                    <strong className="drawer-entry-amount">{money.format(remainingAmount)}</strong>
+                    {partiallyPaid ? <small>{money.format(entryPaidAmount(entry))} paid of {money.format(originalAmount)}</small> : null}
+                  </div>
                   {entry.screenshots?.length ? (
                     <PaymentScreenshotGallery screenshots={entry.screenshots} />
                   ) : null}
@@ -2009,9 +2505,27 @@ function PersonDrawer({
                       ) : <small>Waiting for {entry.lender.name} to review this.</small>}
                     </div>
                   ) : null}
+                  {entryRepayments.length ? (
+                    <div className="entry-repayment-list">
+                      {entryRepayments.map((request) => (
+                        <RepaymentRequestCard
+                          key={request.id}
+                          request={request}
+                          direction={direction}
+                          resolving={resolvingRepaymentId === request.id}
+                          onResolve={onResolveRepayment}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                  {entryReviews.filter((item) => item.status !== 'pending').length ? (
+                    <div className="entry-review-history">
+                      {entryReviews.filter((item) => item.status !== 'pending').map((item) => <ReviewHistoryCard key={item.id} review={item} />)}
+                    </div>
+                  ) : null}
                   {direction === 'receivable' ? (
                     <div className="drawer-entry-actions">
-                      {!review ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark as paid</button> : null}
+                      {!review && !entryRepayments.some((request) => request.status === 'pending') ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark as paid</button> : null}
                       {splitReference
                         ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
                         : <>
@@ -2019,13 +2533,13 @@ function PersonDrawer({
                             <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button>
                           </>}
                     </div>
-                  ) : !review ? (
+                  ) : (
                     <div className="drawer-entry-actions payer-actions">
-                      <button className="entry-action paid-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><CheckCircle2 size={15} /> Paid</button>
-                      <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Upload proof</button>
-                      <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report a mistake</button>
+                      <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><CheckCircle2 size={15} /> Record payment</button>
+                      {!review ? <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Already paid</button> : null}
+                      {!review ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report a mistake</button> : null}
                     </div>
-                  ) : null}
+                  )}
                 </article>
               )
             })}
@@ -2043,6 +2557,8 @@ function PersonDrawer({
                 {paidDueEntries.map((entry) => {
                   const Icon = methodIcons[entry.method]
                   const splitReference = getSplitLedgerReference(entry.id)
+                  const entryRepayments = repaymentRequests.get(entry.id) ?? []
+                  const entryReviews = reviewHistory.get(entry.id) ?? []
                   return (
                     <article className="drawer-entry drawer-entry-paid" key={entry.id}>
                       <span className="method-icon"><Icon size={17} /></span>
@@ -2051,11 +2567,29 @@ function PersonDrawer({
                         <p>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
                       </div>
                       <div className="drawer-paid-amount">
-                        <strong className="drawer-entry-amount">{money.format(entry.amount)}</strong>
+                        <strong className="drawer-entry-amount">{money.format(entryOriginalAmount(entry))}</strong>
                         <span className="drawer-paid-status"><CheckCircle2 size={12} /> Paid</span>
                       </div>
                       {entry.screenshots?.length ? (
                         <PaymentScreenshotGallery screenshots={entry.screenshots} />
+                      ) : null}
+                      {entryRepayments.length ? (
+                        <div className="entry-repayment-list">
+                          {entryRepayments.map((request) => (
+                            <RepaymentRequestCard
+                              key={request.id}
+                              request={request}
+                              direction={direction}
+                              resolving={resolvingRepaymentId === request.id}
+                              onResolve={onResolveRepayment}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                      {entryReviews.length ? (
+                        <div className="entry-review-history">
+                          {entryReviews.map((item) => <ReviewHistoryCard key={item.id} review={item} />)}
+                        </div>
                       ) : null}
                     </article>
                   )
@@ -2085,9 +2619,13 @@ function TallyBackApp() {
   const [importingContacts, setImportingContacts] = useState(false)
   const [reviewIntent, setReviewIntent] = useState<{ entry: LedgerEntry; kind: ReviewKind } | null>(null)
   const [reviewRecords, setReviewRecords] = useState<LedgerReviewRecord[]>([])
+  const [repaymentIntent, setRepaymentIntent] = useState<LedgerEntry | null>(null)
+  const [repaymentRequests, setRepaymentRequests] = useState<RepaymentRequest[]>([])
+  const [activities, setActivities] = useState<LedgerActivity[]>([])
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<LedgerEntry | null>(null)
   const [deleteContactTarget, setDeleteContactTarget] = useState<Person | null>(null)
   const [resolvingReviewId, setResolvingReviewId] = useState<string | null>(null)
+  const [resolvingRepaymentId, setResolvingRepaymentId] = useState<string | null>(null)
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [toast, setToast] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
@@ -2241,6 +2779,37 @@ function TallyBackApp() {
   useEffect(() => {
     const firebaseUser = auth?.currentUser
     if (!currentUser || !firebaseUser || !isFirebaseConfigured) {
+      setRepaymentRequests([])
+      return
+    }
+
+    return subscribeToRepaymentRequests(
+      currentUser.phone,
+      setRepaymentRequests,
+      (error) => {
+        console.error('[repayments/listener]', error)
+        setToast('Could not sync repayment requests. Refresh and retry.')
+      },
+    )
+  }, [currentUser])
+
+  useEffect(() => {
+    const firebaseUser = auth?.currentUser
+    if (!currentUser || !firebaseUser || !isFirebaseConfigured) {
+      setActivities([])
+      return
+    }
+
+    return subscribeToActivities(
+      currentUser.phone,
+      setActivities,
+      (error) => console.error('[activity/listener]', error),
+    )
+  }, [currentUser])
+
+  useEffect(() => {
+    const firebaseUser = auth?.currentUser
+    if (!currentUser || !firebaseUser || !isFirebaseConfigured) {
       setContacts([])
       return
     }
@@ -2296,6 +2865,7 @@ function TallyBackApp() {
         setAddDuePerson(null)
         setEditEntryTarget(null)
         setReviewIntent(null)
+        setRepaymentIntent(null)
         setDeleteEntryTarget(null)
         setDeleteContactTarget(null)
         setProfileOpen(false)
@@ -2306,12 +2876,7 @@ function TallyBackApp() {
   }, [])
 
   const userPhone = normalizePhone(currentUser?.phone ?? '')
-  const ledgerTotals = useMemo(() => entries.reduce((totals, entry) => {
-    if (entry.status !== 'open') return totals
-    if (normalizePhone(entry.lender.phone) === userPhone) totals.receivable += entry.amount
-    if (normalizePhone(entry.borrower.phone) === userPhone) totals.payable += entry.amount
-    return totals
-  }, { receivable: 0, payable: 0 }), [entries, userPhone])
+  const ledgerTotals = useMemo(() => outstandingTotals(entries, userPhone), [entries, userPhone])
   const relevantEntries = useMemo(() => {
     if (!currentUser) return []
     return entries.filter((entry) =>
@@ -2334,11 +2899,38 @@ function TallyBackApp() {
     return pending
   }, [entries])
 
+  const repaymentsByDue = useMemo(() => {
+    const grouped = new Map<string, RepaymentRequest[]>()
+    repaymentRequests.forEach((request) => {
+      const current = grouped.get(request.dueId) ?? []
+      current.push(request)
+      grouped.set(request.dueId, current)
+    })
+    grouped.forEach((requests) => requests.sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt)))
+    return grouped
+  }, [repaymentRequests])
+
+  const reviewRecordsByDue = useMemo(() => {
+    const grouped = new Map<string, LedgerReviewRecord[]>()
+    reviewRecords.forEach((review) => {
+      const current = grouped.get(review.entryId) ?? []
+      current.push(review)
+      grouped.set(review.entryId, current)
+    })
+    grouped.forEach((reviews) => reviews.sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt)))
+    return grouped
+  }, [reviewRecords])
+
   const incomingReviewEntries = useMemo(() => entries.filter((entry) => (
     normalizePhone(entry.lender.phone) === userPhone
-      && entry.status === 'open'
+      && !isPaidEntry(entry)
       && pendingReviews.has(entry.id)
   )), [entries, pendingReviews, userPhone])
+
+  const incomingRepayments = useMemo(() => repaymentRequests.filter((request) => (
+    request.status === 'pending'
+    && normalizePhone(request.lenderPhone) === userPhone
+  )), [repaymentRequests, userPhone])
 
   const allSummaries = useMemo(() => {
     const grouped = new Map<string, ContactSummary>()
@@ -2367,8 +2959,9 @@ function TallyBackApp() {
         entries: [],
       }
       existing.entries.push(entry)
-      if (entry.status === 'open') {
-        existing.total += entry.amount
+      const remainingAmount = entryRemainingAmount(entry)
+      if (remainingAmount > 0) {
+        existing.total += remainingAmount
         existing.openCount += 1
       }
       grouped.set(key, existing)
@@ -2376,8 +2969,8 @@ function TallyBackApp() {
     return [...grouped.values()]
       .filter((summary) => (
         direction === 'receivable'
-          ? contactsByPhone.has(normalizePhone(summary.person.phone)) || summary.openCount > 0
-          : summary.openCount > 0
+          ? contactsByPhone.has(normalizePhone(summary.person.phone)) || summary.entries.length > 0
+          : summary.entries.length > 0
       ))
       .sort((a, b) => b.total - a.total || a.person.name.localeCompare(b.person.name))
   }, [contacts, contactsByPhone, direction, relevantEntries, userPhone])
@@ -2394,36 +2987,81 @@ function TallyBackApp() {
   const selectedSummary = allSummaries.find((item) => normalizePhone(item.person.phone) === selectedPhone)
 
   const activityItems = useMemo<ActivityItem[]>(() => {
-    const items: ActivityItem[] = relevantEntries.map((entry) => ({
-      id: `entry-${entry.id}`,
-      timestamp: timestampMillis(entry.settledAt ?? `${entry.date}T00:00:00`),
-      type: 'entry',
-      entry,
-    }))
+    const items: ActivityItem[] = []
+    const explicitKeys = new Set<string>()
+
+    activities.forEach((activity) => {
+      const belongsToDirection = direction === 'receivable'
+        ? normalizePhone(activity.lenderPhone) === userPhone
+        : normalizePhone(activity.borrowerPhone) === userPhone
+      if (!belongsToDirection) return
+      explicitKeys.add(`${activity.type}:${activity.sourceId}`)
+      items.push({
+        id: `activity-${activity.id}`,
+        timestamp: timestampMillis(activity.occurredAt),
+        kind: 'activity',
+        activity,
+      })
+    })
+
+    relevantEntries.forEach((entry) => {
+      if (explicitKeys.has(`due_created:${entry.id}`)) return
+      items.push({
+        id: `entry-${entry.id}`,
+        timestamp: timestampMillis(entry.createdAt ?? entry.settledAt ?? `${entry.date}T00:00:00`),
+        kind: 'entry',
+        entry,
+      })
+    })
 
     reviewRecords.forEach((review) => {
       const belongsToDirection = direction === 'receivable'
         ? normalizePhone(review.lenderPhone) === userPhone
         : normalizePhone(review.borrowerPhone) === userPhone
       if (!belongsToDirection) return
-      items.push({
+      const requestType = review.kind === 'paid' ? 'repayment_submitted' : 'mistake_reported'
+      if (!explicitKeys.has(`${requestType}:${review.id}`)) items.push({
         id: `review-request-${review.id}`,
         timestamp: timestampMillis(review.createdAt),
-        type: 'review-request',
+        kind: 'review-request',
         review,
       })
       if (review.status !== 'pending') {
-        items.push({
+        const resolutionType = review.kind === 'paid'
+          ? review.status === 'approved' ? 'repayment_accepted' : 'repayment_rejected'
+          : review.status === 'approved' ? 'correction_accepted' : 'correction_rejected'
+        if (!explicitKeys.has(`${resolutionType}:${review.id}`)) items.push({
           id: `review-resolution-${review.id}`,
           timestamp: timestampMillis(review.resolvedAt ?? review.updatedAt),
-          type: 'review-resolution',
+          kind: 'review-resolution',
           review,
         })
       }
     })
 
+    repaymentRequests.forEach((repayment) => {
+      const belongsToDirection = direction === 'receivable'
+        ? normalizePhone(repayment.lenderPhone) === userPhone
+        : normalizePhone(repayment.borrowerPhone) === userPhone
+      if (!belongsToDirection) return
+      if (!explicitKeys.has(`repayment_submitted:${repayment.id}`)) items.push({
+        id: `repayment-request-${repayment.id}`,
+        timestamp: timestampMillis(repayment.createdAt),
+        kind: 'repayment-request',
+        repayment,
+      })
+      if (repayment.status !== 'pending' && !explicitKeys.has(`repayment_${repayment.status}:${repayment.id}`)) {
+        items.push({
+          id: `repayment-resolution-${repayment.id}`,
+          timestamp: timestampMillis(repayment.reviewedAt),
+          kind: 'repayment-resolution',
+          repayment,
+        })
+      }
+    })
+
     return items.sort((a, b) => b.timestamp - a.timestamp)
-  }, [direction, relevantEntries, reviewRecords, userPhone])
+  }, [activities, direction, relevantEntries, repaymentRequests, reviewRecords, userPhone])
 
   function loginToFirebase(uid: string, person: Person) {
     const firebaseUser = auth?.currentUser
@@ -2439,6 +3077,8 @@ function TallyBackApp() {
     setEntries([])
     setContacts([])
     setReviewRecords([])
+    setRepaymentRequests([])
+    setActivities([])
     setProfileOpen(false)
   }
 
@@ -2448,7 +3088,14 @@ function TallyBackApp() {
         const creatorUid = auth.currentUser.uid
         await createFirebaseEntry(entry, creatorUid)
         setEntries((currentEntries) => [
-          { ...entry, createdBy: creatorUid },
+          {
+            ...entry,
+            originalAmount: entry.amount,
+            paidAmount: 0,
+            remainingAmount: entry.amount,
+            status: 'open',
+            createdBy: creatorUid,
+          },
           ...currentEntries.filter((currentEntry) => currentEntry.id !== entry.id),
         ])
       } else {
@@ -2474,9 +3121,15 @@ function TallyBackApp() {
   async function updateEntry(entry: LedgerEntry) {
     try {
       if (!auth?.currentUser) throw new Error('Sign in required')
-      await updateFirebaseEntry(entry)
+      if (!currentUser) throw new Error('Profile unavailable')
+      await updateFirebaseEntry(entry, auth.currentUser.uid, currentUser)
+      const paidAmount = entryPaidAmount(entry)
+      const remainingAmount = Math.max(0, entry.amount - paidAmount)
+      const status = remainingAmount === 0 ? 'paid' : paidAmount > 0 ? 'partially_paid' : 'open'
       setEntries((currentEntries) => currentEntries.map((currentEntry) => (
-        currentEntry.id === entry.id ? { ...currentEntry, ...entry } : currentEntry
+        currentEntry.id === entry.id
+          ? { ...currentEntry, ...entry, originalAmount: entry.amount, paidAmount, remainingAmount, status }
+          : currentEntry
       )))
       setEditEntryTarget(null)
       setToast('Due updated in both ledgers.')
@@ -2519,7 +3172,7 @@ function TallyBackApp() {
     if (!firebaseUser) throw new Error('Sign in required.')
     const phone = normalizePhone(person.phone)
     const hasOpenDue = entries.some((entry) => (
-      entry.status === 'open'
+      !isPaidEntry(entry)
       && normalizePhone(entry.lender.phone) === userPhone
       && normalizePhone(entry.borrower.phone) === phone
     ))
@@ -2555,6 +3208,47 @@ function TallyBackApp() {
     }
   }
 
+  async function sendRepayment(entry: LedgerEntry, submission: RepaymentSubmissionDraft) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser || !currentUser) throw new Error('Sign in again before recording payment.')
+    const { proofFiles, ...draft } = submission
+    let proofScreenshots: PaymentScreenshot[] = []
+    try {
+      const authenticatedPhone = await getAuthenticatedPhone(firebaseUser, true)
+      if (authenticatedPhone !== toE164(entry.borrower.phone)) {
+        throw new Error('Signed-in number does not match borrower on this due.')
+      }
+      proofScreenshots = await uploadPaymentScreenshots(entry.id, firebaseUser.uid, proofFiles)
+      await createRepaymentRequest(entry, firebaseUser.uid, currentUser, { ...draft, proofScreenshots })
+      setToast('Payment sent to lender for approval.')
+    } catch (error) {
+      if (proofScreenshots.length) {
+        try {
+          await deletePaymentScreenshots(proofScreenshots)
+        } catch (cleanupError) {
+          console.warn('[repayment/proof/cleanup]', cleanupError)
+        }
+      }
+      throw error
+    }
+  }
+
+  async function resolveRepayment(request: RepaymentRequest, decision: 'accepted' | 'rejected') {
+    try {
+      const firebaseUser = auth?.currentUser
+      if (!firebaseUser || !currentUser) throw new Error('Sign in required')
+      setResolvingRepaymentId(request.id)
+      await resolveRepaymentRequest(request, decision, firebaseUser.uid, currentUser)
+      setToast(decision === 'accepted'
+        ? 'Payment accepted. Remaining balance updated.'
+        : 'Payment rejected. Due balance unchanged.')
+    } catch (error) {
+      setToast(actionableFirebaseError(error, 'Could not review payment. Refresh and retry.'))
+    } finally {
+      setResolvingRepaymentId(null)
+    }
+  }
+
   async function resolveReview(
     review: LedgerReview,
     entry: LedgerEntry,
@@ -2576,6 +3270,7 @@ function TallyBackApp() {
 
   function openFirstIncomingReview() {
     const entry = incomingReviewEntries[0]
+      ?? entries.find((candidate) => candidate.id === incomingRepayments[0]?.dueId)
     if (!entry) return
     setView('ledger')
     setDirection('receivable')
@@ -2650,6 +3345,16 @@ function TallyBackApp() {
 
     const nextUser = { ...currentUser, name: cleanName }
     await saveUserProfile(firebaseUser.uid, nextUser)
+    await syncParticipantName(entries, firebaseUser.uid, nextUser.phone, cleanName)
+    setEntries((current) => current.map((entry) => ({
+      ...entry,
+      lender: normalizePhone(entry.lender.phone) === normalizePhone(nextUser.phone)
+        ? { ...entry.lender, name: cleanName }
+        : entry.lender,
+      borrower: normalizePhone(entry.borrower.phone) === normalizePhone(nextUser.phone)
+        ? { ...entry.borrower, name: cleanName }
+        : entry.borrower,
+    })))
     setCurrentUser(nextUser)
   }
 
@@ -2694,13 +3399,13 @@ function TallyBackApp() {
           <div className="mobile-logo"><BrandMark /><span>TallyBack</span></div>
           <div className="topbar-actions">
             <button
-              className={`icon-button notification-button ${incomingReviewEntries.length ? 'has-notifications' : ''}`}
-              aria-label={incomingReviewEntries.length ? `Open ${incomingReviewEntries.length} review ${incomingReviewEntries.length === 1 ? 'request' : 'requests'}` : 'No review requests'}
+              className={`icon-button notification-button ${incomingReviewEntries.length + incomingRepayments.length ? 'has-notifications' : ''}`}
+              aria-label={incomingReviewEntries.length + incomingRepayments.length ? `Open ${incomingReviewEntries.length + incomingRepayments.length} pending ${incomingReviewEntries.length + incomingRepayments.length === 1 ? 'request' : 'requests'}` : 'No pending requests'}
               onClick={openFirstIncomingReview}
-              disabled={!incomingReviewEntries.length}
+              disabled={!incomingReviewEntries.length && !incomingRepayments.length}
             >
               <Bell size={19} />
-              {incomingReviewEntries.length ? <span /> : null}
+              {incomingReviewEntries.length + incomingRepayments.length ? <span /> : null}
             </button>
             <div className="profile-wrap" ref={profileMenuRef}>
               <button
@@ -2829,32 +3534,93 @@ function TallyBackApp() {
                 </div>
                 <div className="activity-list">
                   {activityItems.map((item) => {
-                    if (item.type === 'entry') {
+                    if (item.kind === 'activity') {
+                      const { activity } = item
+                      const entry = entries.find((candidate) => candidate.id === activity.dueId)
+                      const person = direction === 'receivable' ? activity.borrower : activity.lender
+                      const titles: Record<LedgerActivity['type'], string> = {
+                        due_created: 'Due created',
+                        due_edited: 'Due edited',
+                        repayment_submitted: 'Repayment submitted',
+                        repayment_accepted: 'Repayment accepted',
+                        repayment_rejected: 'Repayment rejected',
+                        mistake_reported: 'Mistake reported',
+                        correction_accepted: 'Correction accepted',
+                        correction_rejected: 'Correction rejected',
+                        due_marked_paid: 'Due marked paid',
+                      }
+                      const rejected = activity.type === 'repayment_rejected' || activity.type === 'correction_rejected'
+                      const pending = activity.type === 'repayment_submitted' || activity.type === 'mistake_reported'
+                      const completed = activity.type === 'repayment_accepted' || activity.type === 'correction_accepted' || activity.type === 'due_marked_paid'
+                      const StateIcon = rejected ? X : pending ? Flag : completed ? Check : activity.type === 'due_edited' ? Pencil : ReceiptText
+                      const eventTime = timestampMillis(activity.occurredAt)
+                      return (
+                        <article className="activity-row" key={item.id}>
+                          <span className={`activity-state activity-event ${activity.status}`}><StateIcon size={17} /></span>
+                          <div>
+                            <h3>{titles[activity.type]}</h3>
+                            <p>
+                              {activity.actorName} · {person.name} · {entry?.occasion ?? 'Due'} · {eventTime ? dateTime.format(new Date(eventTime)) : shortDate.format(new Date(`${activity.eventDate}T00:00:00`))}
+                            </p>
+                          </div>
+                          <div className="activity-amount">
+                            <strong>{money.format(activity.amount)}</strong>
+                            <span className={activity.status}>{activity.status.replace('_', ' ')}</span>
+                          </div>
+                        </article>
+                      )
+                    }
+
+                    if (item.kind === 'entry') {
                       const { entry } = item
                       const entryPerson = direction === 'receivable' ? entry.borrower : entry.lender
                       const person = contactsByPhone.get(normalizePhone(entryPerson.phone)) ?? entryPerson
                       const Icon = methodIcons[entry.method]
+                      const status = canonicalEntryStatus(entry)
                       return (
                         <article className="activity-row" key={item.id}>
-                          <span className={`activity-state ${entry.status}`}>
-                            {entry.status === 'settled' ? <Check size={17} /> : <Icon size={17} />}
+                          <span className={`activity-state ${status}`}>
+                            {status === 'paid' ? <Check size={17} /> : <Icon size={17} />}
                           </span>
                           <div>
-                            <h3>{entry.occasion}</h3>
-                            <p>{person.name} · {getSplitLedgerReference(entry.id) ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</p>
+                            <h3>Due created</h3>
+                            <p>{entry.lender.name} · {person.name} · {entry.occasion} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</p>
                           </div>
                           <div className="activity-amount">
-                            <strong>{money.format(entry.amount)}</strong>
-                            <span className={pendingReviews.has(entry.id) ? 'review' : entry.status}>
-                              {pendingReviews.has(entry.id) ? 'Review pending' : entry.status === 'settled' ? 'Paid' : 'Open'}
+                            <strong>{money.format(entryOriginalAmount(entry))}</strong>
+                            <span className={pendingReviews.has(entry.id) ? 'review' : status}>
+                              {pendingReviews.has(entry.id) ? 'Review pending' : status.replace('_', ' ')}
                             </span>
                           </div>
                         </article>
                       )
                     }
 
+                    if ('repayment' in item) {
+                      const { repayment } = item
+                      const isResolution = item.kind === 'repayment-resolution'
+                      const accepted = repayment.status === 'accepted'
+                      const entry = entries.find((candidate) => candidate.id === repayment.dueId)
+                      const person = direction === 'receivable' ? entry?.borrower : entry?.lender
+                      return (
+                        <article className="activity-row review-activity-row" key={item.id}>
+                          <span className={`activity-state review-event ${isResolution ? repayment.status : 'review'}`}>
+                            {isResolution ? accepted ? <Check size={17} /> : <X size={17} /> : <ArrowUpRight size={17} />}
+                          </span>
+                          <div>
+                            <h3>{isResolution ? accepted ? 'Repayment accepted' : 'Repayment rejected' : 'Repayment submitted'}</h3>
+                            <p>{isResolution ? entry?.lender.name ?? 'Lender' : repayment.payerName} · {person?.name ?? 'Participant'} · {entry?.occasion ?? 'Due'} · {shortDate.format(new Date(`${repayment.paidAt}T00:00:00`))}</p>
+                          </div>
+                          <div className="activity-amount">
+                            <strong>{money.format(repayment.amount)}</strong>
+                            <span className={isResolution ? repayment.status : 'review'}>{isResolution ? accepted ? 'Accepted' : 'Rejected' : 'Pending'}</span>
+                          </div>
+                        </article>
+                      )
+                    }
+
                     const { review } = item
-                    const isResolution = item.type === 'review-resolution'
+                    const isResolution = item.kind === 'review-resolution'
                     const approved = review.status === 'approved'
                     const eventTitle = isResolution
                       ? review.kind === 'paid'
@@ -2899,7 +3665,10 @@ function TallyBackApp() {
         summary={selectedSummary}
         direction={direction}
         pendingReviews={pendingReviews}
+        repaymentRequests={repaymentsByDue}
+        reviewHistory={reviewRecordsByDue}
         resolvingReviewId={resolvingReviewId}
+        resolvingRepaymentId={resolvingRepaymentId}
         onClose={() => setSelectedPhone(null)}
         onAddDue={startAddDue}
         onEditDue={setEditEntryTarget}
@@ -2912,6 +3681,8 @@ function TallyBackApp() {
         onSettle={markEntrySettled}
         onRequestReview={(entry, kind) => setReviewIntent({ entry, kind })}
         onResolveReview={resolveReview}
+        onRecordPayment={setRepaymentIntent}
+        onResolveRepayment={resolveRepayment}
       />}
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
       {editEntryTarget ? <AddEntryModal currentUser={currentUser} contact={editEntryTarget.borrower} entry={editEntryTarget} onClose={() => setEditEntryTarget(null)} onSave={updateEntry} /> : null}
@@ -2920,6 +3691,11 @@ function TallyBackApp() {
         initialKind={reviewIntent.kind}
         onClose={() => setReviewIntent(null)}
         onSend={(draft) => sendReviewRequest(reviewIntent.entry, draft)}
+      /> : null}
+      {repaymentIntent ? <RepaymentModal
+        entry={repaymentIntent}
+        onClose={() => setRepaymentIntent(null)}
+        onSend={(draft) => sendRepayment(repaymentIntent, draft)}
       /> : null}
       {deleteEntryTarget ? <DeleteDueModal entry={deleteEntryTarget} onClose={() => setDeleteEntryTarget(null)} onDelete={deleteDue} /> : null}
       {deleteContactTarget ? <DeleteContactModal person={deleteContactTarget} onClose={() => setDeleteContactTarget(null)} onDelete={deleteContact} /> : null}

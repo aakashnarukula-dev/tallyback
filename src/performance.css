@@ -14,7 +14,8 @@
 .person-drawer,
 .add-person-modal,
 .add-entry-modal,
-.review-modal {
+.review-modal,
+.repayment-modal {
   transform: translate3d(0, var(--sheet-drag-y, 0px), 0);
   backface-visibility: hidden;
   will-change: transform;
@@ -27,19 +28,22 @@
 .person-drawer.dragging,
 .add-person-modal.dragging,
 .add-entry-modal.dragging,
-.review-modal.dragging {
+.review-modal.dragging,
+.repayment-modal.dragging {
   transition: none !important;
 }
 
 .person-drawer.closing,
 .add-person-modal.closing,
 .add-entry-modal.closing,
-.review-modal.closing {
+.review-modal.closing,
+.repayment-modal.closing {
   transform: translate3d(0, 100%, 0) !important;
 }
 
 .drawer-entry,
 .review-request-card,
+.repayment-request-card,
 .activity-row,
 .contact-ledger-card {
   content-visibility: auto;
@@ -58,10 +62,404 @@
   .person-drawer,
   .add-person-modal,
   .add-entry-modal,
-  .review-modal {
+  .review-modal,
+  .repayment-modal {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+.screenshot-lightbox {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.repayment-modal {
+  width: min(570px, 100%);
+  max-height: min(92dvh, 790px);
+  overflow-y: auto;
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+}
+
+.repayment-header {
+  margin-bottom: 14px;
+}
+
+.repayment-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 13px 14px;
+  border: 1px solid #ded9ee;
+  border-radius: 14px;
+  background: #f6f3fc;
+}
+
+.repayment-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.repayment-summary span {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repayment-summary small,
+.repayment-proof-heading span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.repayment-summary strong {
+  color: var(--coral);
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.repayment-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.repayment-fields > label,
+.repayment-fields > .form-field,
+.repayment-note {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #596175;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.repayment-fields > label:last-child {
+  grid-column: 1 / -1;
+}
+
+.repayment-fields input,
+.repayment-fields select,
+.repayment-fields .date-picker-trigger {
+  min-height: 42px;
+}
+
+.repayment-proof {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #e1dced;
+  border-radius: 14px;
+  background: #fbfafe;
+}
+
+.repayment-proof-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.repayment-proof-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.repayment-proof-heading strong {
+  font-size: 11px;
+}
+
+.repayment-proof-empty {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px dashed #cbc4df;
+  border-radius: 11px;
+  background: #fffefd;
+  color: #68627b;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.repayment-preview-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 104px;
+  gap: 9px;
+  margin-top: 11px;
+  padding-bottom: 3px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+
+.repayment-preview-card {
+  margin: 0;
+  scroll-snap-align: start;
+}
+
+.repayment-preview-open {
+  width: 104px;
+  height: 82px;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #d8d2e6;
+  border-radius: 10px;
+  background: #eeebf4;
+}
+
+.repayment-preview-open img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.repayment-preview-remove {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 5px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--coral-soft);
+  color: var(--coral);
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.repayment-note {
+  margin-top: 14px;
+}
+
+.repayment-note span {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.repayment-note textarea {
+  resize: vertical;
+  min-height: 66px;
+  padding: 10px 11px;
+  border: 1px solid #ddd8e9;
+  border-radius: 11px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.repayment-actions {
+  margin-top: 16px;
+}
+
+.drawer-entry-balance {
+  min-width: 0;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.drawer-entry-balance small {
+  color: #5e8272;
+  font-size: 7px;
+  white-space: nowrap;
+}
+
+.drawer-entry-partial {
+  border-color: #cfe4da;
+  background: #fbfefc;
+}
+
+.entry-repayment-list,
+.entry-review-history {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 9px;
+}
+
+.repayment-request-card,
+.review-history-card {
+  padding: 11px;
+  border: 1px solid #ddd8ea;
+  border-radius: 12px;
+  background: #faf9fd;
+}
+
+.repayment-request-card.accepted,
+.review-history-card.accepted {
+  border-color: #c7e2d5;
+  background: #f2faf6;
+}
+
+.repayment-request-card.rejected,
+.review-history-card.rejected {
+  border-color: #ecced0;
+  background: #fff7f6;
+}
+
+.repayment-request-card > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 10px;
+}
+
+.repayment-request-card > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.repayment-request-card > header span,
+.repayment-request-card > header strong,
+.review-history-card header strong {
+  font-size: 10px;
+}
+
+.repayment-request-card > header small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.repayment-status {
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 7px;
+  background: #eee9fa;
+  color: #625bae;
+  font-size: 7px !important;
+  font-weight: 800;
+}
+
+.repayment-status.accepted {
+  background: #dcefe6;
+  color: #37745d;
+}
+
+.repayment-status.rejected {
+  background: #f8dedf;
+  color: #a34850;
+}
+
+.repayment-request-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 13px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.repayment-request-details span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.repayment-request-card > p,
+.review-history-card > p {
+  margin: 8px 0 0;
+  color: #5f5a6c;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.repayment-request-card .ledger-proof-block,
+.review-history-card .ledger-proof-block {
+  margin-top: 9px;
+}
+
+.repayment-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.repayment-review-actions button {
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid #ddd8e8;
+  border-radius: 9px;
+  background: var(--paper);
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.repayment-review-actions .repayment-accept {
+  border-color: #5e59bc;
+  background: var(--indigo);
+  color: white;
+}
+
+.repayment-review-actions .repayment-reject {
+  color: var(--coral);
+}
+
+.repayment-waiting {
+  display: block;
+  margin-top: 9px;
+  color: #6c6680;
+  font-size: 8px;
+}
+
+.review-history-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.activity-state.partially_paid,
+.activity-state.activity-event.pending {
+  background: var(--butter);
+  color: #876b20;
+}
+
+.activity-state.paid,
+.activity-state.activity-event.accepted {
+  background: var(--mint);
+  color: #37745d;
+}
+
+.activity-state.activity-event.rejected {
+  background: var(--coral-soft);
+  color: var(--coral);
+}
+
+@media (max-width: 600px) {
+  .repayment-modal {
+    width: 100%;
+    max-height: calc(100dvh - 8px);
+    padding: 8px 16px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+  }
+
+  .repayment-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .repayment-proof-heading {
+    align-items: flex-start;
+  }
+
+  .repayment-proof-heading .payment-upload-button {
+    flex: 0 0 auto;
   }
 }
 

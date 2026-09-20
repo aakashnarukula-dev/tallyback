@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview",
     "test:firestore-rules": "firebase emulators:exec --only firestore,storage --project demo-tallyback \"node tests/firestore-rules.mjs\""
   },
@@ -24,9 +27,18 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@firebase/rules-unit-testing": "^5.0.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "typescript": "latest"
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "jsdom": "^30.1.0",
+    "typescript": "latest",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.1"
   }
 }

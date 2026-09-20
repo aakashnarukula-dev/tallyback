@@ -39,6 +39,12 @@ service firebase.storage {
       // token is still missing the mirrored phone claim.
       allow create: if request.auth != null
         && request.auth.uid == uploaderUid
+        && (
+          !firestore.exists(
+            /databases/(default)/documents/ledgerEntries/$(entryId)
+          )
+          || isEntryParticipant(entryId)
+        )
         && fileName.matches('^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$')
         && request.resource.size > 0
         && request.resource.size <= 6 * 1024 * 1024

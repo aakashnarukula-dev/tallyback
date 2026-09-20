@@ -7,7 +7,6 @@ import {
 import {
   collection,
   deleteField,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -27,9 +26,59 @@ import {
 } from 'firebase/storage'
 
 const projectId = 'demo-tallyback'
-const uid = 'truecaller-user'
-const phone = '+919177216132'
-const otherPhone = '+917729944442'
+const lenderUid = 'lender-9177216132'
+const borrowerUid = 'borrower-9154195668'
+const lenderPhone = '+919177216132'
+const borrowerPhone = '+919154195668'
+const strangerPhone = '+919999999999'
+const dueId = 'partial-payment-due'
+
+const lender = { name: 'Aakash', phone: lenderPhone }
+const borrower = { name: 'Borrower', phone: borrowerPhone }
+
+const screenshot = (requestId, name = 'proof.png') => ({
+  path: `ledgerEntries/${dueId}/${borrowerUid}/${requestId}-${name}`,
+  name,
+  contentType: 'image/png',
+  size: 2048,
+})
+
+const repayment = (requestId, amount) => ({
+  dueId,
+  lenderId: lenderUid,
+  lenderPhone,
+  borrowerId: borrowerUid,
+  borrowerPhone,
+  participantPhones: [lenderPhone, borrowerPhone],
+  payerName: borrower.name,
+  amount,
+  method: 'UPI',
+  paidAt: '2026-09-21',
+  proofScreenshots: [screenshot(requestId)],
+  note: 'Paid offline',
+  status: 'pending',
+  createdAt: serverTimestamp(),
+})
+
+const activity = (type, actorUid, actorPhone, actorName, status, amount = 1000) => ({
+  dueId,
+  sourceId: `${type}-source`,
+  type,
+  actorUid,
+  actorPhone,
+  actorName,
+  lender,
+  borrower,
+  lenderPhone,
+  borrowerPhone,
+  participantPhones: [lenderPhone, borrowerPhone],
+  amount,
+  eventDate: '2026-09-21',
+  method: 'UPI',
+  note: '',
+  status,
+  occurredAt: serverTimestamp(),
+})
 
 const testEnvironment = await initializeTestEnvironment({
   projectId,
@@ -44,381 +93,468 @@ const testEnvironment = await initializeTestEnvironment({
 try {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     const database = context.firestore()
-    await setDoc(doc(database, 'users', uid), {
-      name: 'Aakash Work',
-      phone,
+    await setDoc(doc(database, 'users', lenderUid), {
+      name: lender.name,
+      phone: lenderPhone,
       updatedAt: new Date(),
     })
-    await setDoc(doc(database, 'ledgerEntries', 'saved-entry'), {
-      lender: { name: 'Aakash Work', phone },
-      borrower: { name: 'Aakash 2', phone: otherPhone },
-      lenderPhone: phone,
-      borrowerPhone: otherPhone,
-      participantPhones: [phone, otherPhone],
-      amount: 100,
-      occasion: 'Tickets',
+    await setDoc(doc(database, 'users', borrowerUid), {
+      name: borrower.name,
+      phone: borrowerPhone,
+      updatedAt: new Date(),
+    })
+    await setDoc(doc(database, 'ledgerEntries', dueId), {
+      lender,
+      borrower,
+      lenderPhone,
+      borrowerPhone,
+      participantPhones: [lenderPhone, borrowerPhone],
+      amount: 1000,
+      originalAmount: 1000,
+      paidAmount: 0,
+      remainingAmount: 1000,
+      occasion: 'Shared booking',
       method: 'UPI',
-      date: '2026-09-07',
+      date: '2026-09-20',
       status: 'open',
-      createdBy: uid,
+      createdBy: lenderUid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await setDoc(doc(database, 'ledgerEntries', 'rejection-due'), {
+      lender,
+      borrower,
+      lenderPhone,
+      borrowerPhone,
+      participantPhones: [lenderPhone, borrowerPhone],
+      amount: 200,
+      originalAmount: 200,
+      paidAmount: 0,
+      remainingAmount: 200,
+      occasion: 'Rejected repayment',
+      method: 'UPI',
+      date: '2026-09-20',
+      status: 'open',
+      createdBy: lenderUid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await setDoc(doc(database, 'ledgerEntries', 'already-paid-review-due'), {
+      lender,
+      borrower,
+      lenderPhone,
+      borrowerPhone,
+      participantPhones: [lenderPhone, borrowerPhone],
+      amount: 500,
+      originalAmount: 500,
+      paidAmount: 0,
+      remainingAmount: 500,
+      occasion: 'Already paid review',
+      method: 'UPI',
+      date: '2026-09-20',
+      status: 'open',
+      createdBy: lenderUid,
       createdAt: new Date(),
       updatedAt: new Date(),
     })
   })
 
-  const truecallerDatabase = testEnvironment
-    .authenticatedContext(uid, { loginMethod: 'truecaller', verifiedPhone: phone })
+  const lenderDatabase = testEnvironment
+    .authenticatedContext(lenderUid, { phone_number: lenderPhone })
+    .firestore()
+  const borrowerDatabase = testEnvironment
+    .authenticatedContext(borrowerUid, { phone_number: borrowerPhone })
+    .firestore()
+  const strangerDatabase = testEnvironment
+    .authenticatedContext('stranger', { phone_number: strangerPhone })
     .firestore()
 
-  await assertSucceeds(getDoc(doc(truecallerDatabase, 'ledgerEntries', 'saved-entry')))
-  const ledgerQuery = query(
-    collection(truecallerDatabase, 'ledgerEntries'),
-    or(
-      where('lenderPhone', '==', phone),
-      where('borrowerPhone', '==', phone),
-    ),
-  )
-  const snapshot = await assertSucceeds(getDocs(ledgerQuery))
-  if (snapshot.size !== 1) {
-    throw new Error(`Expected one ledger entry, received ${snapshot.size}.`)
-  }
-
-  const contactPath = `users/${uid}/contacts/7729944442`
-  await assertSucceeds(setDoc(doc(truecallerDatabase, contactPath), {
-    name: 'Aakash 2',
-    phone: otherPhone,
-    source: 'device',
+  await assertSucceeds(updateDoc(doc(lenderDatabase, 'users', lenderUid), {
+    name: 'Aakash Updated',
     updatedAt: serverTimestamp(),
   }))
-  await assertSucceeds(getDocs(collection(truecallerDatabase, 'users', uid, 'contacts')))
-  await assertFails(setDoc(doc(truecallerDatabase, `users/${uid}/contacts/not-a-phone`), {
-    name: 'Invalid contact',
-    phone: '+91not-a-phone',
-    source: 'manual',
+  await assertFails(updateDoc(doc(lenderDatabase, 'users', lenderUid), {
+    name: 'TallyBack member',
     updatedAt: serverTimestamp(),
   }))
 
-  const splitId = 'goa-trip-unit123'
-  const recipientId = 'member-unit123'
-  const splitEntryId = `split-${splitId}-${recipientId}`
-  await assertSucceeds(setDoc(doc(truecallerDatabase, 'splitPages', splitId), {
-    title: 'Goa trip',
-    description: 'Shared travel costs',
-    active: true,
-    currency: 'INR',
-    ownerUid: uid,
-    ownerName: 'Aakash Work',
-    recipients: [{ id: recipientId, name: 'Aakash 2', amount: 500, status: 'pending', ledgerEntryId: splitEntryId }],
-    totalAmount: 500,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }))
-  await assertSucceeds(setDoc(doc(truecallerDatabase, 'ledgerEntries', splitEntryId), {
-    lender: { name: 'Aakash Work', phone },
-    borrower: { name: 'Aakash 2', phone: otherPhone },
-    lenderPhone: phone,
-    borrowerPhone: otherPhone,
-    participantPhones: [phone, otherPhone],
-    amount: 500,
-    occasion: 'Goa trip',
-    method: 'Personal funds',
-    date: '2026-09-19',
-    status: 'open',
-    createdBy: uid,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }))
-  await assertSucceeds(runTransaction(truecallerDatabase, async (transaction) => {
-    const pageRef = doc(truecallerDatabase, 'splitPages', splitId)
-    const pageSnapshot = await transaction.get(pageRef)
-    const page = pageSnapshot.data()
-    const paidAt = new Date().toISOString()
-    transaction.update(pageRef, {
-      recipients: page.recipients.map((recipient) => recipient.id === recipientId
-        ? { ...recipient, status: 'paid', paidAt }
-        : recipient),
-      updatedAt: serverTimestamp(),
-    })
-    transaction.update(doc(truecallerDatabase, 'ledgerEntries', splitEntryId), {
-      status: 'settled',
-      settledAt: paidAt,
-      updatedAt: serverTimestamp(),
-    })
-  }))
-  await assertFails(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', splitEntryId)))
-
-  const attachmentEntry = {
-    lender: { name: 'Aakash Work', phone },
-    borrower: { name: 'Aakash 2', phone: otherPhone },
-    lenderPhone: phone,
-    borrowerPhone: otherPhone,
-    participantPhones: [phone, otherPhone],
-    amount: 250,
-    occasion: 'Payment with proof',
+  const newDueId = 'canonical-new-due'
+  const createDue = writeBatch(lenderDatabase)
+  createDue.set(doc(lenderDatabase, 'ledgerEntries', newDueId), {
+    lender: { ...lender, name: 'Aakash Updated' },
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 350,
+    originalAmount: 350,
+    paidAmount: 0,
+    remainingAmount: 350,
+    occasion: 'New due',
     method: 'UPI',
-    date: '2026-09-15',
+    date: '2026-09-21',
     status: 'open',
-    createdBy: uid,
+    createdBy: lenderUid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    screenshots: Array.from({ length: 5 }, (_, index) => ({
-      path: `ledgerEntries/attachment-entry/${uid}/proof-${index + 1}.png`,
-      name: `proof-${index + 1}.png`,
-      contentType: 'image/png',
-      size: 1024,
-    })),
-  }
-  await assertSucceeds(setDoc(
-    doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'),
-    attachmentEntry,
-  ))
-
-  const smsDatabase = testEnvironment
-    .authenticatedContext('sms-user', { phone_number: otherPhone })
-    .firestore()
-  await assertSucceeds(updateDoc(doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'), {
-    amount: 275,
-    occasion: 'Updated payment with proof',
-    screenshots: attachmentEntry.screenshots.slice(0, 4),
+  })
+  createDue.set(doc(lenderDatabase, 'ledgerActivities', 'new-due-created'), {
+    dueId: newDueId,
+    sourceId: newDueId,
+    type: 'due_created',
+    actorUid: lenderUid,
+    actorPhone: lenderPhone,
+    actorName: 'Aakash Updated',
+    lender: { ...lender, name: 'Aakash Updated' },
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 350,
+    eventDate: '2026-09-21',
+    method: 'UPI',
+    note: '',
+    status: 'open',
+    occurredAt: serverTimestamp(),
+  })
+  await assertSucceeds(createDue.commit())
+  const editDue = writeBatch(lenderDatabase)
+  editDue.update(doc(lenderDatabase, 'ledgerEntries', newDueId), {
+    amount: 400,
+    originalAmount: 400,
+    paidAmount: 0,
+    remainingAmount: 400,
+    occasion: 'Edited due',
+    method: 'Bank transfer',
+    date: '2026-09-22',
+    status: 'open',
     updatedAt: serverTimestamp(),
-  }))
-  await assertFails(updateDoc(doc(smsDatabase, 'ledgerEntries', 'attachment-entry'), {
-    amount: 1,
+  })
+  editDue.set(doc(lenderDatabase, 'ledgerActivities', 'new-due-edited'), {
+    dueId: newDueId,
+    sourceId: newDueId,
+    type: 'due_edited',
+    actorUid: lenderUid,
+    actorPhone: lenderPhone,
+    actorName: 'Aakash Updated',
+    lender: { ...lender, name: 'Aakash Updated' },
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 400,
+    eventDate: '2026-09-22',
+    method: 'Bank transfer',
+    note: '',
+    status: 'open',
+    occurredAt: serverTimestamp(),
+  })
+  await assertSucceeds(editDue.commit())
+  const markDuePaid = writeBatch(lenderDatabase)
+  markDuePaid.update(doc(lenderDatabase, 'ledgerEntries', newDueId), {
+    originalAmount: 400,
+    paidAmount: 400,
+    remainingAmount: 0,
+    status: 'paid',
+    settledAt: new Date().toISOString(),
     updatedAt: serverTimestamp(),
-  }))
+  })
+  markDuePaid.set(doc(lenderDatabase, 'ledgerActivities', 'new-due-paid'), {
+    dueId: newDueId,
+    sourceId: newDueId,
+    type: 'due_marked_paid',
+    actorUid: lenderUid,
+    actorPhone: lenderPhone,
+    actorName: 'Aakash Updated',
+    lender: { ...lender, name: 'Aakash Updated' },
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 400,
+    eventDate: '2026-09-22',
+    method: 'Bank transfer',
+    note: '',
+    status: 'paid',
+    occurredAt: serverTimestamp(),
+  })
+  await assertSucceeds(markDuePaid.commit())
 
-  const paidReviewId = 'paid-review-unit123'
-  const paidReviewProof = {
-    path: 'ledgerEntries/attachment-entry/sms-user/paid-proof.png',
-    name: 'paid-proof.png',
+  const reviewId = 'already-paid-review'
+  const reviewProof = {
+    path: `ledgerEntries/already-paid-review-due/${borrowerUid}/already-paid.png`,
+    name: 'already-paid.png',
     contentType: 'image/png',
     size: 2048,
   }
-  const embeddedPaidReview = {
-    reviewId: paidReviewId,
-    requestedByUid: 'sms-user',
-    requestedByPhone: otherPhone,
+  const embeddedReview = {
+    reviewId,
+    requestedByUid: borrowerUid,
+    requestedByPhone: borrowerPhone,
     kind: 'paid',
     proposedAmount: 0,
     proposedMethod: 'UPI',
-    proposedOccasion: 'Updated payment with proof',
-    proposedDate: '2026-09-15',
-    note: 'Paid by UPI',
-    proofScreenshots: [paidReviewProof],
+    proposedOccasion: 'Already paid review',
+    proposedDate: '2026-09-20',
+    note: 'Paid in full',
+    proofScreenshots: [reviewProof],
     status: 'pending',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }
-  const submitPaidReview = writeBatch(smsDatabase)
-  submitPaidReview.update(doc(smsDatabase, 'ledgerEntries', 'attachment-entry'), {
-    review: embeddedPaidReview,
+  const submitReview = writeBatch(borrowerDatabase)
+  submitReview.update(doc(borrowerDatabase, 'ledgerEntries', 'already-paid-review-due'), {
+    review: embeddedReview,
     updatedAt: serverTimestamp(),
   })
-  submitPaidReview.set(doc(smsDatabase, 'ledgerReviews', paidReviewId), {
-    entryId: 'attachment-entry',
-    entryCreatedBy: uid,
-    lender: { name: 'Aakash Work', phone },
-    borrower: { name: 'Aakash 2', phone: otherPhone },
-    lenderPhone: phone,
-    borrowerPhone: otherPhone,
-    participantPhones: [phone, otherPhone],
-    requestedByUid: 'sms-user',
-    requestedByPhone: otherPhone,
+  submitReview.set(doc(borrowerDatabase, 'ledgerReviews', reviewId), {
+    entryId: 'already-paid-review-due',
+    entryCreatedBy: lenderUid,
+    lender,
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    requestedByUid: borrowerUid,
+    requestedByPhone: borrowerPhone,
     kind: 'paid',
-    originalAmount: 275,
+    originalAmount: 500,
     originalMethod: 'UPI',
-    originalOccasion: 'Updated payment with proof',
-    originalDate: '2026-09-15',
+    originalOccasion: 'Already paid review',
+    originalDate: '2026-09-20',
     proposedAmount: 0,
     proposedMethod: 'UPI',
-    proposedOccasion: 'Updated payment with proof',
-    proposedDate: '2026-09-15',
-    note: 'Paid by UPI',
-    proofScreenshots: [paidReviewProof],
+    proposedOccasion: 'Already paid review',
+    proposedDate: '2026-09-20',
+    note: 'Paid in full',
+    proofScreenshots: [reviewProof],
     status: 'pending',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  await assertSucceeds(submitPaidReview.commit())
-  await assertSucceeds(getDoc(doc(truecallerDatabase, 'ledgerReviews', paidReviewId)))
-
-  await assertFails(updateDoc(doc(smsDatabase, 'ledgerReviews', paidReviewId), {
-    status: 'approved',
-    resolvedByUid: 'sms-user',
-    resolvedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }))
-
-  const approvePaidReview = writeBatch(truecallerDatabase)
-  approvePaidReview.update(doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'), {
-    review: null,
-    status: 'settled',
-    settledAt: new Date().toISOString(),
-    updatedAt: serverTimestamp(),
+  submitReview.set(doc(borrowerDatabase, 'ledgerActivities', 'already-paid-submitted'), {
+    ...activity('repayment_submitted', borrowerUid, borrowerPhone, borrower.name, 'pending', 500),
+    dueId: 'already-paid-review-due',
+    sourceId: reviewId,
+    lender,
+    borrower,
   })
-  approvePaidReview.update(doc(truecallerDatabase, 'ledgerReviews', paidReviewId), {
-    status: 'approved',
-    resolvedByUid: uid,
-    resolvedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  })
-  await assertFails(approvePaidReview.commit())
+  await assertSucceeds(submitReview.commit())
 
-  const resolvePaidReview = writeBatch(truecallerDatabase)
-  resolvePaidReview.update(doc(truecallerDatabase, 'ledgerEntries', 'attachment-entry'), {
+  const approveReview = writeBatch(lenderDatabase)
+  approveReview.update(doc(lenderDatabase, 'ledgerEntries', 'already-paid-review-due'), {
     review: deleteField(),
-    status: 'settled',
+    originalAmount: 500,
+    paidAmount: 500,
+    remainingAmount: 0,
+    status: 'paid',
     settledAt: new Date().toISOString(),
     updatedAt: serverTimestamp(),
   })
-  resolvePaidReview.update(doc(truecallerDatabase, 'ledgerReviews', paidReviewId), {
+  approveReview.update(doc(lenderDatabase, 'ledgerReviews', reviewId), {
     status: 'approved',
-    resolvedByUid: uid,
+    resolvedByUid: lenderUid,
     resolvedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  await assertSucceeds(resolvePaidReview.commit())
-  const smsQuery = query(
-    collection(smsDatabase, 'ledgerEntries'),
+  approveReview.set(doc(lenderDatabase, 'ledgerActivities', 'already-paid-accepted'), {
+    ...activity('repayment_accepted', lenderUid, lenderPhone, lender.name, 'accepted', 500),
+    dueId: 'already-paid-review-due',
+    sourceId: reviewId,
+    lender,
+    borrower,
+  })
+  approveReview.set(doc(lenderDatabase, 'ledgerActivities', 'already-paid-completed'), {
+    ...activity('due_marked_paid', lenderUid, lenderPhone, lender.name, 'paid', 500),
+    dueId: 'already-paid-review-due',
+    sourceId: reviewId,
+    lender,
+    borrower,
+  })
+  await assertSucceeds(approveReview.commit())
+  const reviewedDue = await getDoc(doc(borrowerDatabase, 'ledgerEntries', 'already-paid-review-due'))
+  const reviewHistory = await getDoc(doc(borrowerDatabase, 'ledgerReviews', reviewId))
+  if (!reviewedDue.exists() || reviewedDue.data().status !== 'paid' || reviewHistory.data().status !== 'approved') {
+    throw new Error('Accepted already-paid review did not retain paid due and approved review history.')
+  }
+
+  await assertSucceeds(getDoc(doc(lenderDatabase, 'ledgerEntries', dueId)))
+  await assertSucceeds(getDoc(doc(borrowerDatabase, 'ledgerEntries', dueId)))
+  await assertFails(getDoc(doc(strangerDatabase, 'ledgerEntries', dueId)))
+
+  await assertSucceeds(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-400'), repayment('payment-400', 400)))
+  await assertFails(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-too-large'), repayment('payment-too-large', 1001)))
+  await assertFails(updateDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-400'), {
+    status: 'accepted',
+    reviewedAt: serverTimestamp(),
+    reviewedBy: borrowerUid,
+  }))
+
+  await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'payment-400')
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', dueId)
+    await Promise.all([transaction.get(requestRef), transaction.get(entryRef)])
+    transaction.update(requestRef, {
+      status: 'accepted',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: lenderUid,
+    })
+    transaction.update(entryRef, {
+      originalAmount: 1000,
+      paidAmount: 400,
+      remainingAmount: 600,
+      status: 'partially_paid',
+      lastRepaymentId: 'payment-400',
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
+  let entrySnapshot = await getDoc(doc(lenderDatabase, 'ledgerEntries', dueId))
+  if (entrySnapshot.data().paidAmount !== 400 || entrySnapshot.data().remainingAmount !== 600) {
+    throw new Error('First partial payment did not produce expected 400 paid / 600 remaining balance.')
+  }
+
+  await assertFails(runTransaction(lenderDatabase, async (transaction) => {
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'payment-400')
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', dueId)
+    await Promise.all([transaction.get(requestRef), transaction.get(entryRef)])
+    transaction.update(entryRef, {
+      paidAmount: 800,
+      remainingAmount: 200,
+      lastRepaymentId: 'payment-400',
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
+  await assertSucceeds(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-600'), repayment('payment-600', 600)))
+  await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'payment-600')
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', dueId)
+    await Promise.all([transaction.get(requestRef), transaction.get(entryRef)])
+    transaction.update(requestRef, {
+      status: 'accepted',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: lenderUid,
+    })
+    transaction.update(entryRef, {
+      originalAmount: 1000,
+      paidAmount: 1000,
+      remainingAmount: 0,
+      status: 'paid',
+      settledAt: new Date().toISOString(),
+      lastRepaymentId: 'payment-600',
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
+  entrySnapshot = await getDoc(doc(lenderDatabase, 'ledgerEntries', dueId))
+  if (!entrySnapshot.exists() || entrySnapshot.data().status !== 'paid' || entrySnapshot.data().remainingAmount !== 0) {
+    throw new Error('Paid due was removed or retained an outstanding balance.')
+  }
+
+  await assertSucceeds(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-rejected'), {
+    ...repayment('payment-rejected', 50),
+    dueId: 'rejection-due',
+    proofScreenshots: [{
+      ...screenshot('payment-rejected'),
+      path: `ledgerEntries/rejection-due/${borrowerUid}/proof.png`,
+    }],
+  }))
+  await assertSucceeds(updateDoc(doc(lenderDatabase, 'repaymentRequests', 'payment-rejected'), {
+    status: 'rejected',
+    reviewedAt: serverTimestamp(),
+    reviewedBy: lenderUid,
+  }))
+
+  await assertSucceeds(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-submitted'), activity(
+    'repayment_submitted',
+    borrowerUid,
+    borrowerPhone,
+    borrower.name,
+    'pending',
+    400,
+  )))
+  await assertFails(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-accepted'), activity(
+    'repayment_accepted',
+    borrowerUid,
+    borrowerPhone,
+    borrower.name,
+    'accepted',
+    400,
+  )))
+  await assertFails(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-spoofed-name'), activity(
+    'repayment_submitted',
+    borrowerUid,
+    borrowerPhone,
+    'Spoofed borrower',
+    'pending',
+    400,
+  )))
+  await assertSucceeds(setDoc(doc(lenderDatabase, 'ledgerActivities', 'lender-accepted'), activity(
+    'repayment_accepted',
+    lenderUid,
+    lenderPhone,
+    lender.name,
+    'accepted',
+    400,
+  )))
+
+  const activityQuery = query(
+    collection(borrowerDatabase, 'ledgerActivities'),
     or(
-      where('lenderPhone', '==', otherPhone),
-      where('borrowerPhone', '==', otherPhone),
+      where('lenderPhone', '==', borrowerPhone),
+      where('borrowerPhone', '==', borrowerPhone),
     ),
   )
-  await assertSucceeds(getDocs(smsQuery))
-  await assertSucceeds(getDoc(doc(smsDatabase, 'ledgerEntries', splitEntryId)))
+  await assertSucceeds(getDocs(activityQuery))
+  await assertFails(getDocs(query(
+    collection(strangerDatabase, 'ledgerActivities'),
+    or(
+      where('lenderPhone', '==', borrowerPhone),
+      where('borrowerPhone', '==', borrowerPhone),
+    ),
+  )))
 
-  const strangerDatabase = testEnvironment
-    .authenticatedContext('stranger', { verifiedPhone: '+919999999999' })
-    .firestore()
-  await assertFails(getDoc(doc(strangerDatabase, 'ledgerReviews', paidReviewId)))
-  await assertFails(getDocs(collection(strangerDatabase, 'users', uid, 'contacts')))
-  await assertFails(setDoc(doc(strangerDatabase, contactPath), {
-    name: 'Changed by stranger',
-    phone: otherPhone,
-    source: 'manual',
+  await assertSucceeds(updateDoc(doc(borrowerDatabase, 'users', borrowerUid), {
+    name: 'Borrower Updated',
     updatedAt: serverTimestamp(),
   }))
-  await assertFails(deleteDoc(doc(strangerDatabase, contactPath)))
-  await assertSucceeds(deleteDoc(doc(truecallerDatabase, contactPath)))
-  const strangerQuery = query(
-    collection(strangerDatabase, 'ledgerEntries'),
-    or(
-      where('lenderPhone', '==', phone),
-      where('borrowerPhone', '==', phone),
-    ),
-  )
-  await assertFails(getDocs(strangerQuery))
+  await assertSucceeds(updateDoc(doc(borrowerDatabase, 'ledgerEntries', dueId), {
+    'borrower.name': 'Borrower Updated',
+    updatedAt: serverTimestamp(),
+  }))
 
-  const legacyTruecallerDatabase = testEnvironment
-    .authenticatedContext(uid, { loginMethod: 'truecaller' })
-    .firestore()
-  const legacyQuery = query(
-    collection(legacyTruecallerDatabase, 'ledgerEntries'),
-    or(
-      where('lenderPhone', '==', phone),
-      where('borrowerPhone', '==', phone),
-    ),
-  )
-  await assertFails(getDocs(legacyQuery))
+  await assertFails(updateDoc(doc(lenderDatabase, 'ledgerEntries', dueId), {
+    borrowerPhone: strangerPhone,
+    updatedAt: serverTimestamp(),
+  }))
 
-  const proofPath = `ledgerEntries/saved-entry/${uid}/proof.png`
-  const truecallerStorage = testEnvironment
-    .authenticatedContext(uid, { loginMethod: 'truecaller', verifiedPhone: phone })
+  const proofPath = `ledgerEntries/${dueId}/${borrowerUid}/storage-proof.png`
+  const borrowerStorage = testEnvironment
+    .authenticatedContext(borrowerUid, { phone_number: borrowerPhone })
     .storage('gs://demo-tallyback.firebasestorage.app')
   await assertSucceeds(uploadString(
-    storageRef(truecallerStorage, proofPath),
+    storageRef(borrowerStorage, proofPath),
     'payment-proof',
     'raw',
     { contentType: 'image/png' },
   ))
-
-  const borrowerStorage = testEnvironment
-    .authenticatedContext('sms-user', { phone_number: otherPhone })
+  const lenderStorage = testEnvironment
+    .authenticatedContext(lenderUid, { phone_number: lenderPhone })
     .storage('gs://demo-tallyback.firebasestorage.app')
-  await assertSucceeds(getMetadata(storageRef(borrowerStorage, proofPath)))
-
+  await assertSucceeds(getMetadata(storageRef(lenderStorage, proofPath)))
   const strangerStorage = testEnvironment
-    .authenticatedContext('stranger', { verifiedPhone: '+919999999999' })
+    .authenticatedContext('stranger', { phone_number: strangerPhone })
     .storage('gs://demo-tallyback.firebasestorage.app')
   await assertFails(getMetadata(storageRef(strangerStorage, proofPath)))
   await assertFails(uploadString(
-    storageRef(truecallerStorage, `ledgerEntries/saved-entry/${uid}/not-an-image.txt`),
-    'not-an-image',
-    'raw',
-    { contentType: 'text/plain' },
-  ))
-
-  const secondPhoneUid = 'second-phone-user'
-  const secondPhoneStorage = testEnvironment
-    .authenticatedContext(secondPhoneUid, { phone_number: otherPhone })
-    .storage('gs://demo-tallyback.firebasestorage.app')
-  await assertSucceeds(uploadString(
-    storageRef(secondPhoneStorage, `ledgerEntries/second-phone-entry/${secondPhoneUid}/proof.png`),
-    'second-account-payment-proof',
-    'raw',
-    { contentType: 'image/png' },
-  ))
-  const secondPhoneDatabase = testEnvironment
-    .authenticatedContext(secondPhoneUid, { phone_number: otherPhone })
-    .firestore()
-  await assertSucceeds(setDoc(doc(secondPhoneDatabase, 'ledgerEntries', 'second-phone-entry'), {
-    lender: { name: 'Second phone member', phone: otherPhone },
-    borrower: { name: 'Aakash Work', phone },
-    lenderPhone: otherPhone,
-    borrowerPhone: phone,
-    participantPhones: [otherPhone, phone],
-    amount: 1,
-    occasion: 'Movie',
-    method: 'UPI',
-    date: '2026-09-18',
-    status: 'open',
-    createdBy: secondPhoneUid,
-    screenshots: [{
-      path: `ledgerEntries/second-phone-entry/${secondPhoneUid}/proof.png`,
-      name: 'proof.png',
-      contentType: 'image/png',
-      size: 28,
-    }],
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }))
-  await assertSucceeds(getDoc(doc(truecallerDatabase, 'ledgerEntries', 'second-phone-entry')))
-  await assertSucceeds(getMetadata(storageRef(
-    truecallerStorage,
-    `ledgerEntries/second-phone-entry/${secondPhoneUid}/proof.png`,
-  )))
-  await assertFails(uploadString(
-    storageRef(secondPhoneStorage, `ledgerEntries/second-phone-entry/${uid}/wrong-owner.png`),
-    'wrong-owner-payment-proof',
+    storageRef(strangerStorage, `ledgerEntries/${dueId}/stranger/proof.png`),
+    'not-allowed',
     'raw',
     { contentType: 'image/png' },
   ))
 
-  const claimRefreshStorage = testEnvironment
-    .authenticatedContext('fresh-phone-session')
-    .storage('gs://demo-tallyback.firebasestorage.app')
-  await assertSucceeds(uploadString(
-    storageRef(claimRefreshStorage, 'ledgerEntries/fresh-session-entry/fresh-phone-session/proof.png'),
-    'fresh-session-payment-proof',
-    'raw',
-    { contentType: 'image/png' },
-  ))
-
-  const signedOutStorage = testEnvironment
-    .unauthenticatedContext()
-    .storage('gs://demo-tallyback.firebasestorage.app')
-  await assertFails(uploadString(
-    storageRef(signedOutStorage, 'ledgerEntries/signed-out-entry/signed-out-user/proof.png'),
-    'signed-out-payment-proof',
-    'raw',
-    { contentType: 'image/png' },
-  ))
-
-  await assertFails(deleteDoc(doc(smsDatabase, 'ledgerEntries', 'saved-entry')))
-  await assertSucceeds(deleteDoc(doc(truecallerDatabase, 'ledgerEntries', 'saved-entry')))
-
-  console.log('Firestore and Storage rules: private contacts, unified split dues, creator-only due edits and deletion, participant ledgers, and payment proofs passed.')
+  console.log('Firestore and Storage rules: borrower submission, lender-only review, partial balances, duplicate protection, retained paid dues, activity visibility, immutable identities, and private proof access passed.')
 } finally {
   await testEnvironment.cleanup()
 }
