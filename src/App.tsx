@@ -1420,10 +1420,12 @@ function PaymentScreenshotGallery({
   screenshots,
   onRemove,
   removingDisabled = false,
+  compact = false,
 }: {
   screenshots: PaymentScreenshot[]
   onRemove?: (path: string) => void
   removingDisabled?: boolean
+  compact?: boolean
 }) {
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [failedPaths, setFailedPaths] = useState<string[]>([])
@@ -1487,9 +1489,9 @@ function PaymentScreenshotGallery({
   }, [activeScreenshot])
 
   return (
-    <div className="ledger-proof-block">
+    <div className={`ledger-proof-block ${compact ? 'ledger-proof-compact' : ''}`}>
       <div className="ledger-proof-heading">
-        <span><ImageIcon size={13} /> Payment proof</span>
+        <span><ImageIcon size={13} /> {compact ? 'Proof' : 'Payment proof'}</span>
         <small>{screenshots.length} {screenshots.length === 1 ? 'image' : 'images'}</small>
       </div>
       <div className="ledger-proof-rail">
@@ -2236,33 +2238,46 @@ function RepaymentRequestCard({
   const statusLabel = request.status === 'pending'
     ? 'Pending approval'
     : request.status === 'accepted' ? 'Accepted' : 'Rejected'
+  const needsAction = request.status === 'pending' && direction === 'receivable'
+  const [expanded, setExpanded] = useState(needsAction)
   return (
     <article className={`repayment-request-card ${request.status}`}>
-      <header>
-        <div>
-          <span>{request.payerName}</span>
-          <small>paid {shortDate.format(new Date(`${request.paidAt}T00:00:00`))}</small>
+      <button
+        className="transaction-disclosure-toggle"
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <span className="transaction-disclosure-copy">
+          <strong>{request.payerName}</strong>
+          <small>{request.method} · {shortDate.format(new Date(`${request.paidAt}T00:00:00`))}</small>
+        </span>
+        <span className="transaction-disclosure-value">
+          <strong>{money.format(request.amount)}</strong>
+          <span className={`repayment-status ${request.status}`}>{statusLabel}</span>
+        </span>
+        <ChevronDown className={expanded ? 'expanded' : ''} size={15} aria-hidden="true" />
+      </button>
+      {expanded ? (
+        <div className="transaction-disclosure-body">
+          <div className="repayment-request-details">
+            <span><CalendarDays size={13} /> Submitted {dateTime.format(new Date(timestampMillis(request.createdAt)))}</span>
+          </div>
+          {request.note ? <p>{request.note}</p> : null}
+          <PaymentScreenshotGallery screenshots={request.proofScreenshots} compact />
+          {needsAction ? (
+            <div className="repayment-review-actions">
+              <button type="button" className="repayment-reject" disabled={resolving} onClick={() => onResolve(request, 'rejected')}>
+                Reject
+              </button>
+              <button type="button" className="repayment-accept" disabled={resolving} onClick={() => onResolve(request, 'accepted')}>
+                {resolving ? 'Reviewing…' : 'Accept payment'}
+              </button>
+            </div>
+          ) : request.status === 'pending' ? (
+            <small className="repayment-waiting">Waiting for lender approval.</small>
+          ) : null}
         </div>
-        <strong>{money.format(request.amount)}</strong>
-        <span className={`repayment-status ${request.status}`}>{statusLabel}</span>
-      </header>
-      <div className="repayment-request-details">
-        <span><CreditCard size={13} /> {request.method}</span>
-        <span><CalendarDays size={13} /> Submitted {dateTime.format(new Date(timestampMillis(request.createdAt)))}</span>
-      </div>
-      {request.note ? <p>{request.note}</p> : null}
-      <PaymentScreenshotGallery screenshots={request.proofScreenshots} />
-      {request.status === 'pending' && direction === 'receivable' ? (
-        <div className="repayment-review-actions">
-          <button type="button" className="repayment-reject" disabled={resolving} onClick={() => onResolve(request, 'rejected')}>
-            Reject
-          </button>
-          <button type="button" className="repayment-accept" disabled={resolving} onClick={() => onResolve(request, 'accepted')}>
-            {resolving ? 'Reviewing…' : 'Accept payment'}
-          </button>
-        </div>
-      ) : request.status === 'pending' ? (
-        <small className="repayment-waiting">Waiting for lender approval.</small>
       ) : null}
     </article>
   )
@@ -2270,17 +2285,98 @@ function RepaymentRequestCard({
 
 function ReviewHistoryCard({ review }: { review: LedgerReviewRecord }) {
   const status = review.status === 'approved' ? 'accepted' : review.status
+  const [expanded, setExpanded] = useState(false)
   return (
     <article className={`review-history-card ${status}`}>
-      <header>
-        <strong>{review.kind === 'paid' ? 'Already paid review' : 'Correction review'}</strong>
+      <button
+        className="transaction-disclosure-toggle"
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <span className="transaction-disclosure-copy">
+          <strong>{review.kind === 'paid' ? 'Already paid review' : 'Correction review'}</strong>
+          <small>{shortDate.format(new Date(`${review.proposedDate}T00:00:00`))}</small>
+        </span>
         <span className={`repayment-status ${status}`}>
           {review.status === 'approved' ? 'Accepted' : review.status === 'rejected' ? 'Rejected' : 'Pending'}
         </span>
-      </header>
-      <p>{review.note || (review.kind === 'paid' ? 'Payment proof submitted.' : 'Due details reviewed.')}</p>
-      {review.proofScreenshots.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} /> : null}
+        <ChevronDown className={expanded ? 'expanded' : ''} size={15} aria-hidden="true" />
+      </button>
+      {expanded ? (
+        <div className="transaction-disclosure-body">
+          <p>{review.note || (review.kind === 'paid' ? 'Payment proof submitted.' : 'Due details reviewed.')}</p>
+          {review.proofScreenshots.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} compact /> : null}
+        </div>
+      ) : null}
     </article>
+  )
+}
+
+function EntryTransactionHistory({
+  repayments,
+  reviews,
+  direction,
+  onResolveRepayment,
+}: {
+  repayments: RepaymentRequest[]
+  reviews: LedgerReviewRecord[]
+  direction: Direction
+  onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const items = [
+    ...repayments.map((repayment) => ({
+      id: `repayment-${repayment.id}`,
+      kind: 'repayment' as const,
+      timestamp: timestampMillis(repayment.reviewedAt ?? repayment.createdAt),
+      repayment,
+    })),
+    ...reviews.map((review) => ({
+      id: `review-${review.id}`,
+      kind: 'review' as const,
+      timestamp: timestampMillis(review.resolvedAt ?? review.updatedAt ?? review.createdAt),
+      review,
+    })),
+  ].sort((a, b) => b.timestamp - a.timestamp)
+
+  if (!items.length) return null
+
+  const latest = items[0]
+  const latestStatus = latest.kind === 'repayment'
+    ? latest.repayment.status === 'accepted' ? 'accepted' : 'rejected'
+    : latest.review.status === 'approved' ? 'accepted' : 'rejected'
+
+  return (
+    <section className="entry-transaction-history" aria-label="Transaction history">
+      <button
+        className="transaction-history-toggle"
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <span className="transaction-history-icon"><History size={14} /></span>
+        <span>
+          <strong>Transaction history</strong>
+          <small>{items.length} {items.length === 1 ? 'record' : 'records'} · latest {latestStatus}</small>
+        </span>
+        <span className="transaction-history-count">{items.length}</span>
+        <ChevronDown className={expanded ? 'expanded' : ''} size={16} aria-hidden="true" />
+      </button>
+      {expanded ? (
+        <div className="transaction-history-list">
+          {items.map((item) => item.kind === 'repayment' ? (
+            <RepaymentRequestCard
+              key={item.id}
+              request={item.repayment}
+              direction={direction}
+              resolving={false}
+              onResolve={onResolveRepayment}
+            />
+          ) : <ReviewHistoryCard key={item.id} review={item.review} />)}
+        </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -2470,6 +2566,9 @@ function PersonDrawer({
             const splitReference = getSplitLedgerReference(entry.id)
             const entryRepayments = repaymentRequests.get(entry.id) ?? []
             const entryReviews = reviewHistory.get(entry.id) ?? []
+            const pendingRepayments = entryRepayments.filter((request) => request.status === 'pending')
+            const completedRepayments = entryRepayments.filter((request) => request.status !== 'pending')
+            const completedReviews = entryReviews.filter((item) => item.status !== 'pending')
             const remainingAmount = entryRemainingAmount(entry)
             const originalAmount = entryOriginalAmount(entry)
             const partiallyPaid = canonicalEntryStatus(entry) === 'partially_paid'
@@ -2485,7 +2584,7 @@ function PersonDrawer({
                     {partiallyPaid ? <small>{money.format(entryPaidAmount(entry))} paid of {money.format(originalAmount)}</small> : null}
                   </div>
                   {entry.screenshots?.length ? (
-                    <PaymentScreenshotGallery screenshots={entry.screenshots} />
+                    <PaymentScreenshotGallery screenshots={entry.screenshots} compact />
                   ) : null}
                   {review ? (
                     <div className={`entry-review ${direction}`}>
@@ -2497,7 +2596,7 @@ function PersonDrawer({
                             : `${entry.borrower.name} says this has already been paid.`}
                         </strong>
                         {review.note ? <p>“{review.note}”</p> : null}
-                        {review.proofScreenshots?.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} /> : null}
+                        {review.proofScreenshots?.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} compact /> : null}
                       </div>
                       {direction === 'receivable' ? (
                         <div className="review-actions">
@@ -2509,9 +2608,9 @@ function PersonDrawer({
                       ) : <small>Waiting for {entry.lender.name} to review this.</small>}
                     </div>
                   ) : null}
-                  {entryRepayments.length ? (
+                  {pendingRepayments.length ? (
                     <div className="entry-repayment-list">
-                      {entryRepayments.map((request) => (
+                      {pendingRepayments.map((request) => (
                         <RepaymentRequestCard
                           key={request.id}
                           request={request}
@@ -2522,11 +2621,12 @@ function PersonDrawer({
                       ))}
                     </div>
                   ) : null}
-                  {entryReviews.filter((item) => item.status !== 'pending').length ? (
-                    <div className="entry-review-history">
-                      {entryReviews.filter((item) => item.status !== 'pending').map((item) => <ReviewHistoryCard key={item.id} review={item} />)}
-                    </div>
-                  ) : null}
+                  <EntryTransactionHistory
+                    repayments={completedRepayments}
+                    reviews={completedReviews}
+                    direction={direction}
+                    onResolveRepayment={onResolveRepayment}
+                  />
                   {direction === 'receivable' ? (
                     <div className="drawer-entry-actions">
                       {!review && !entryRepayments.some((request) => request.status === 'pending') ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark as paid</button> : null}
@@ -2541,7 +2641,7 @@ function PersonDrawer({
                     <div className="drawer-entry-actions payer-actions">
                       <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><CheckCircle2 size={15} /> Record payment</button>
                       {!review ? <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Already paid</button> : null}
-                      {!review ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report a mistake</button> : null}
+                      {!review ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report issue</button> : null}
                     </div>
                   )}
                 </article>
@@ -2563,6 +2663,9 @@ function PersonDrawer({
                   const splitReference = getSplitLedgerReference(entry.id)
                   const entryRepayments = repaymentRequests.get(entry.id) ?? []
                   const entryReviews = reviewHistory.get(entry.id) ?? []
+                  const pendingRepayments = entryRepayments.filter((request) => request.status === 'pending')
+                  const completedRepayments = entryRepayments.filter((request) => request.status !== 'pending')
+                  const completedReviews = entryReviews.filter((item) => item.status !== 'pending')
                   return (
                     <article className="drawer-entry drawer-entry-paid" key={entry.id}>
                       <span className="method-icon"><Icon size={17} /></span>
@@ -2575,11 +2678,11 @@ function PersonDrawer({
                         <span className="drawer-paid-status"><CheckCircle2 size={12} /> Paid</span>
                       </div>
                       {entry.screenshots?.length ? (
-                        <PaymentScreenshotGallery screenshots={entry.screenshots} />
+                        <PaymentScreenshotGallery screenshots={entry.screenshots} compact />
                       ) : null}
-                      {entryRepayments.length ? (
+                      {pendingRepayments.length ? (
                         <div className="entry-repayment-list">
-                          {entryRepayments.map((request) => (
+                          {pendingRepayments.map((request) => (
                             <RepaymentRequestCard
                               key={request.id}
                               request={request}
@@ -2590,11 +2693,12 @@ function PersonDrawer({
                           ))}
                         </div>
                       ) : null}
-                      {entryReviews.length ? (
-                        <div className="entry-review-history">
-                          {entryReviews.map((item) => <ReviewHistoryCard key={item.id} review={item} />)}
-                        </div>
-                      ) : null}
+                      <EntryTransactionHistory
+                        repayments={completedRepayments}
+                        reviews={completedReviews}
+                        direction={direction}
+                        onResolveRepayment={onResolveRepayment}
+                      />
                     </article>
                   )
                 })}
