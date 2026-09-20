@@ -433,7 +433,11 @@ function actionableFirebaseError(error: unknown, fallback: string) {
   if (message && !message.startsWith('FirebaseError:') && !message.includes('Missing or insufficient permissions')) {
     return message
   }
-  if (code === 'storage/unauthorized' || code === 'permission-denied') return 'Access expired. Sign in again, then retry.'
+  if (code === 'storage/unauthenticated' || code === 'auth/id-token-expired' || code === 'auth/user-token-expired') {
+    return 'Access expired. Sign in again, then retry.'
+  }
+  if (code === 'storage/unauthorized') return 'Payment proof access denied. Refresh this due and retry.'
+  if (code === 'permission-denied') return 'Payment request was denied. Refresh this due and confirm the signed-in number.'
   if (code === 'storage/retry-limit-exceeded' || code === 'unavailable') return 'Connection interrupted. Check internet and retry.'
   if (code === 'storage/quota-exceeded' || code === 'resource-exhausted') return 'Upload limit reached. Try again later.'
   return fallback

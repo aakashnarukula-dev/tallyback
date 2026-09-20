@@ -519,6 +519,14 @@ try {
     name: 'Borrower Updated',
     updatedAt: serverTimestamp(),
   }))
+  await assertSucceeds(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-renamed'), activity(
+    'repayment_submitted',
+    borrowerUid,
+    borrowerPhone,
+    'Borrower Updated',
+    'pending',
+    100,
+  )))
   await assertSucceeds(updateDoc(doc(borrowerDatabase, 'ledgerEntries', dueId), {
     'borrower.name': 'Borrower Updated',
     updatedAt: serverTimestamp(),

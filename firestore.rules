@@ -645,12 +645,22 @@ service cloud.firestore {
             ]
             && request.auth.uid == entry.createdBy
             && phone() == entry.lenderPhone
-            && data.actorName == entry.lender.name
+            && (
+              data.actorName == entry.lender.name
+              || data.actorName == get(
+                /databases/$(database)/documents/users/$(request.auth.uid)
+              ).data.name
+            )
           )
           || (
             data.type in ['repayment_submitted', 'mistake_reported']
             && phone() == entry.borrowerPhone
-            && data.actorName == entry.borrower.name
+            && (
+              data.actorName == entry.borrower.name
+              || data.actorName == get(
+                /databases/$(database)/documents/users/$(request.auth.uid)
+              ).data.name
+            )
           )
         );
     }
