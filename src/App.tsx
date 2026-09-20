@@ -138,9 +138,51 @@ type ActivityItem =
   | { id: string; timestamp: number; kind: 'repayment-request' | 'repayment-resolution'; repayment: RepaymentRequest }
 
 const PROFILE_NAME_PLACEHOLDERS = new Set(['', 'tallyback member', 'my account'])
+let dismissLayerSequence = 0
 
 export function hasProfileName(name?: string | null) {
   return !PROFILE_NAME_PLACEHOLDERS.has(name?.trim().toLowerCase() ?? '')
+}
+
+export function useBrowserBackDismiss(onDismiss: () => void) {
+  const onDismissRef = useRef(onDismiss)
+  const mountedRef = useRef(false)
+  const [layerId] = useState(() => `tallyback-dismiss-layer-${Date.now()}-${dismissLayerSequence += 1}`)
+
+  onDismissRef.current = onDismiss
+
+  useEffect(() => {
+    mountedRef.current = true
+    const currentState = window.history.state && typeof window.history.state === 'object'
+      ? window.history.state
+      : {}
+
+    if (window.history.state?.tallyBackDismissLayer !== layerId) {
+      window.history.pushState(
+        { ...currentState, tallyBackDismissLayer: layerId },
+        '',
+        window.location.href,
+      )
+    }
+
+    const closeOnBack = () => {
+      if (window.history.state?.tallyBackDismissLayer === layerId) return
+      onDismissRef.current()
+    }
+
+    window.addEventListener('popstate', closeOnBack)
+
+    return () => {
+      mountedRef.current = false
+      window.removeEventListener('popstate', closeOnBack)
+
+      queueMicrotask(() => {
+        if (!mountedRef.current && window.history.state?.tallyBackDismissLayer === layerId) {
+          window.history.back()
+        }
+      })
+    }
+  }, [layerId])
 }
 
 function timestampMillis(value: unknown) {
@@ -881,6 +923,8 @@ function AddPersonModal({
     closeTimerRef.current = window.setTimeout(onClose, 160)
   }
 
+  useBrowserBackDismiss(() => closeSheet())
+
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || closingRef.current || workingRef.current) return
     dragStartRef.current = { y: event.clientY, time: performance.now() }
@@ -1066,6 +1110,8 @@ function AddEntryModal({
     setDragging(false)
     closeTimerRef.current = window.setTimeout(onClose, 160)
   }
+
+  useBrowserBackDismiss(() => closeSheet())
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || closingRef.current || savingRef.current) return
@@ -1583,6 +1629,8 @@ function RepaymentModal({
     closeTimerRef.current = window.setTimeout(onClose, 160)
   }
 
+  useBrowserBackDismiss(() => closeSheet())
+
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || closingRef.current || workingRef.current) return
     dragStartRef.current = { y: event.clientY, time: performance.now() }
@@ -1913,6 +1961,10 @@ function ReviewRequestModal({
   const [proofFiles, setProofFiles] = useState<File[]>([])
   const proofInputRef = useRef<HTMLInputElement>(null)
 
+  useBrowserBackDismiss(() => {
+    if (!working) onClose()
+  })
+
   function addProofFiles(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? [])
     event.target.value = ''
@@ -2145,6 +2197,10 @@ function DeleteDueModal({
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
 
+  useBrowserBackDismiss(() => {
+    if (!working) onClose()
+  })
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     try {
@@ -2192,6 +2248,10 @@ function DeleteContactModal({
 }) {
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
+
+  useBrowserBackDismiss(() => {
+    if (!working) onClose()
+  })
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -2442,6 +2502,8 @@ function PersonDrawer({
     setDragging(false)
     closeTimerRef.current = window.setTimeout(onClose, 160)
   }
+
+  useBrowserBackDismiss(() => closeSheet())
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || closing) return
