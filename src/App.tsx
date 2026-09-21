@@ -1854,7 +1854,7 @@ export function RepaymentModal({
         ><span /></button>
         <div className="modal-header repayment-header">
           <div>
-            <p className="modal-kicker">{mode === 'record' ? `Paid by ${entry.borrower.name}` : 'Offline repayment'}</p>
+            {mode === 'request' ? <p className="modal-kicker">Offline repayment</p> : null}
             <h2 id="repayment-title">Record payment</h2>
           </div>
           <button className="icon-button" type="button" onClick={closeSheet} aria-label="Close dialog" disabled={working}>
@@ -1882,16 +1882,26 @@ export function RepaymentModal({
                 />
               </div>
             </label>
-            <div className="form-field">
-              <span>Payment date</span>
-              <DatePicker value={date} onChange={setDate} max={today()} />
-            </div>
             <label>
               Payment method
               <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)} disabled={working}>
                 {methods.map((item) => <option key={item}>{item}</option>)}
               </select>
             </label>
+            <label className="repayment-note">
+              Note
+              <textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value.slice(0, 280))}
+                rows={1}
+                placeholder="Reference number or short note"
+                disabled={working}
+              />
+            </label>
+            <div className="form-field">
+              <span>Payment date</span>
+              <DatePicker value={date} onChange={setDate} max={today()} />
+            </div>
           </div>
 
           <section className="repayment-proof" aria-labelledby="repayment-proof-title">
@@ -1932,17 +1942,6 @@ export function RepaymentModal({
               </div>
             ) : null}
           </section>
-
-          <label className="repayment-note">
-            Note
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value.slice(0, 280))}
-              rows={2}
-              placeholder="Reference number or short note"
-              disabled={working}
-            />
-          </label>
 
           {error ? <p className="form-error" role="alert">{error}</p> : null}
           <div className="modal-actions repayment-actions">
