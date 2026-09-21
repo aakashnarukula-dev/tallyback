@@ -1000,7 +1000,7 @@
   background: #eaf7f1;
 }
 
-.paid-due-summary {
+.drawer-entry > .paid-due-summary {
   width: 100%;
   min-height: 62px;
   display: grid;
