@@ -2243,12 +2243,16 @@ function RepaymentRequestCard({
   remainingAmount,
   resolving,
   onResolve,
+  expanded: controlledExpanded,
+  onToggle,
 }: {
   request: RepaymentRequest
   direction: Direction
   remainingAmount?: number
   resolving: boolean
   onResolve: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
+  expanded?: boolean
+  onToggle?: () => void
 }) {
   const lenderRecorded = request.recordedBy === 'lender'
   const statusLabel = lenderRecorded
@@ -2262,14 +2266,16 @@ function RepaymentRequestCard({
         ? `Only ${money.format(remainingAmount)} remains. Reject this request and ask for a corrected amount.`
         : ''
     : ''
-  const [expanded, setExpanded] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const expanded = controlledExpanded ?? localExpanded
+  const toggleExpanded = onToggle ?? (() => setLocalExpanded((open) => !open))
   return (
     <article className={`repayment-request-card ${request.status}`}>
       <button
         className="transaction-disclosure-toggle"
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((open) => !open)}
+        onClick={toggleExpanded}
       >
         <span className="transaction-disclosure-copy">
           <strong>{lenderRecorded ? `${request.payerName} paid` : request.payerName}</strong>
@@ -2315,16 +2321,23 @@ function RepaymentRequestCard({
   )
 }
 
-function ReviewHistoryCard({ review }: { review: LedgerReviewRecord }) {
+function ReviewHistoryCard({
+  review,
+  expanded,
+  onToggle,
+}: {
+  review: LedgerReviewRecord
+  expanded: boolean
+  onToggle: () => void
+}) {
   const status = review.status === 'approved' ? 'accepted' : review.status
-  const [expanded, setExpanded] = useState(false)
   return (
     <article className={`review-history-card ${status}`}>
       <button
         className="transaction-disclosure-toggle"
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((open) => !open)}
+        onClick={onToggle}
       >
         <span className="transaction-disclosure-copy">
           <strong>{review.kind === 'paid' ? 'Already paid review' : 'Correction review'}</strong>
@@ -2363,6 +2376,7 @@ function EntryTransactionHistory({
   onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const items = [
     ...repayments.map((repayment) => ({
       id: `repayment-${repayment.id}`,
@@ -2385,13 +2399,18 @@ function EntryTransactionHistory({
     ? latest.repayment.status === 'accepted' ? 'accepted' : 'rejected'
     : latest.review.status === 'approved' ? 'accepted' : 'rejected'
 
+  function toggleHistory() {
+    if (expanded) setExpandedItemId(null)
+    setExpanded((open) => !open)
+  }
+
   return (
     <section className="entry-transaction-history" aria-label="Repayment history">
       <button
         className="transaction-history-toggle"
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((open) => !open)}
+        onClick={toggleHistory}
       >
         <span className="transaction-history-icon"><History size={14} /></span>
         <span>
@@ -2410,61 +2429,25 @@ function EntryTransactionHistory({
               direction={direction}
               resolving={false}
               onResolve={onResolveRepayment}
+              expanded={expandedItemId === item.id}
+              onToggle={() => setExpandedItemId((current) => current === item.id ? null : item.id)}
             />
-          ) : <ReviewHistoryCard key={item.id} review={item.review} />)}
+          ) : (
+            <ReviewHistoryCard
+              key={item.id}
+              review={item.review}
+              expanded={expandedItemId === item.id}
+              onToggle={() => setExpandedItemId((current) => current === item.id ? null : item.id)}
+            />
+          ))}
         </div>
       ) : null}
     </section>
   )
 }
 
-export function OpenDueCard({
-  entry,
-  direction,
-  expanded,
-  review,
-  repayments,
-  reviews,
-  resolvingReviewId,
-  resolvingRepaymentId,
-  onEditDue,
-  onDeleteDue,
-  onOpenSplit,
-  onRequestReview,
-  onResolveReview,
-  onRecordPayment,
-  onResolveRepayment,
-  onToggle,
-}: {
-  entry: LedgerEntry
-  direction: Direction
-  expanded: boolean
-  review?: LedgerReview
-  repayments: RepaymentRequest[]
-  reviews: LedgerReviewRecord[]
-  resolvingReviewId: string | null
-  resolvingRepaymentId: string | null
-  onEditDue: (entry: LedgerEntry) => void
-  onDeleteDue: (entry: LedgerEntry) => void
-  onOpenSplit: () => void
-  onRequestReview: (entry: LedgerEntry) => void
-  onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
-  onRecordPayment: (entry: LedgerEntry) => void
-  onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
-  onToggle: () => void
-}) {
+function useExpandedLedgerCardScroll(expanded: boolean) {
   const cardRef = useRef<HTMLElement>(null)
-  const Icon = methodIcons[entry.method]
-  const splitReference = getSplitLedgerReference(entry.id)
-  const pendingRepayments = repayments.filter((request) => request.status === 'pending')
-  const completedRepayments = repayments.filter((request) => request.status !== 'pending')
-  const completedReviews = reviews.filter((item) => item.status !== 'pending')
-  const remainingAmount = entryRemainingAmount(entry)
-  const originalAmount = entryOriginalAmount(entry)
-  const partiallyPaid = canonicalEntryStatus(entry) === 'partially_paid'
-  const attentionCount = pendingRepayments.length + (review ? 1 : 0)
-  const historyCount = completedRepayments.length + completedReviews.length
-  const hasHistory = Boolean(entry.historyStarted || review || repayments.length || reviews.length)
 
   useEffect(() => {
     if (!expanded) return
@@ -2504,6 +2487,57 @@ export function OpenDueCard({
       pendingImages.forEach((image) => image.removeEventListener('load', scrollCardIntoView))
     }
   }, [expanded])
+
+  return cardRef
+}
+
+export function OpenDueCard({
+  entry,
+  direction,
+  expanded,
+  review,
+  repayments,
+  reviews,
+  resolvingReviewId,
+  resolvingRepaymentId,
+  onEditDue,
+  onDeleteDue,
+  onOpenSplit,
+  onRequestReview,
+  onResolveReview,
+  onRecordPayment,
+  onResolveRepayment,
+  onToggle,
+}: {
+  entry: LedgerEntry
+  direction: Direction
+  expanded: boolean
+  review?: LedgerReview
+  repayments: RepaymentRequest[]
+  reviews: LedgerReviewRecord[]
+  resolvingReviewId: string | null
+  resolvingRepaymentId: string | null
+  onEditDue: (entry: LedgerEntry) => void
+  onDeleteDue: (entry: LedgerEntry) => void
+  onOpenSplit: () => void
+  onRequestReview: (entry: LedgerEntry) => void
+  onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
+  onRecordPayment: (entry: LedgerEntry) => void
+  onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
+  onToggle: () => void
+}) {
+  const cardRef = useExpandedLedgerCardScroll(expanded)
+  const Icon = methodIcons[entry.method]
+  const splitReference = getSplitLedgerReference(entry.id)
+  const pendingRepayments = repayments.filter((request) => request.status === 'pending')
+  const completedRepayments = repayments.filter((request) => request.status !== 'pending')
+  const completedReviews = reviews.filter((item) => item.status !== 'pending')
+  const remainingAmount = entryRemainingAmount(entry)
+  const originalAmount = entryOriginalAmount(entry)
+  const partiallyPaid = canonicalEntryStatus(entry) === 'partially_paid'
+  const attentionCount = pendingRepayments.length + (review ? 1 : 0)
+  const historyCount = completedRepayments.length + completedReviews.length
+  const hasHistory = Boolean(entry.historyStarted || review || repayments.length || reviews.length)
 
   return (
     <article ref={cardRef} className={`drawer-entry due-card ${expanded ? 'is-expanded' : ''} ${partiallyPaid ? 'drawer-entry-partial' : ''}`}>
@@ -2602,6 +2636,83 @@ export function OpenDueCard({
   )
 }
 
+export function PaidDueCard({
+  entry,
+  direction,
+  expanded,
+  repayments,
+  reviews,
+  resolvingRepaymentId,
+  onResolveRepayment,
+  onToggle,
+}: {
+  entry: LedgerEntry
+  direction: Direction
+  expanded: boolean
+  repayments: RepaymentRequest[]
+  reviews: LedgerReviewRecord[]
+  resolvingRepaymentId: string | null
+  onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
+  onToggle: () => void
+}) {
+  const cardRef = useExpandedLedgerCardScroll(expanded)
+  const Icon = methodIcons[entry.method]
+  const splitReference = getSplitLedgerReference(entry.id)
+  const pendingRepayments = repayments.filter((request) => request.status === 'pending')
+  const completedRepayments = repayments.filter((request) => request.status !== 'pending')
+  const completedReviews = reviews.filter((item) => item.status !== 'pending')
+
+  return (
+    <article ref={cardRef} className={`drawer-entry drawer-entry-paid ${expanded ? 'is-expanded' : ''}`}>
+      <button
+        className="paid-due-summary"
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span className="method-icon"><Icon size={17} /></span>
+        <span className="drawer-entry-copy">
+          <strong>{entry.occasion}</strong>
+          <small>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</small>
+        </span>
+        <span className="drawer-paid-amount">
+          <strong className="drawer-entry-amount">{money.format(entryOriginalAmount(entry))}</strong>
+          <span className="drawer-paid-status"><CheckCircle2 size={12} /> Paid</span>
+        </span>
+        <ChevronDown className={expanded ? 'expanded' : ''} size={17} aria-hidden="true" />
+      </button>
+
+      {expanded ? (
+        <div className="paid-due-details">
+          {entry.screenshots?.length ? (
+            <PaymentScreenshotGallery screenshots={entry.screenshots} label="Receiver screenshot" compact />
+          ) : null}
+          {pendingRepayments.length ? (
+            <div className="entry-repayment-list">
+              {pendingRepayments.map((request) => (
+                <RepaymentRequestCard
+                  key={request.id}
+                  request={request}
+                  direction={direction}
+                  remainingAmount={0}
+                  resolving={resolvingRepaymentId === request.id}
+                  onResolve={onResolveRepayment}
+                />
+              ))}
+            </div>
+          ) : null}
+          <EntryTransactionHistory
+            repayments={completedRepayments}
+            reviews={completedReviews}
+            direction={direction}
+            onResolveRepayment={onResolveRepayment}
+          />
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
 function PersonDrawer({
   summary,
   direction,
@@ -2657,6 +2768,7 @@ function PersonDrawer({
   const [closing, setClosing] = useState(false)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
   const [paidExpanded, setPaidExpanded] = useState(false)
+  const [expandedPaidEntryId, setExpandedPaidEntryId] = useState<string | null>(null)
 
   function closeSheet() {
     if (closing) return
@@ -2815,7 +2927,10 @@ function PersonDrawer({
                 className="drawer-section-title drawer-paid-title paid-history-toggle"
                 type="button"
                 aria-expanded={paidExpanded}
-                onClick={() => setPaidExpanded((open) => !open)}
+                onClick={() => {
+                  if (paidExpanded) setExpandedPaidEntryId(null)
+                  setPaidExpanded((open) => !open)
+                }}
               >
                 <div>
                   <h3 id="paid-dues-title">
@@ -2828,51 +2943,19 @@ function PersonDrawer({
                 <ChevronDown className={paidExpanded ? 'expanded' : ''} size={17} aria-hidden="true" />
               </button>
               {paidExpanded ? <div className="drawer-entry-list">
-                {paidDueEntries.map((entry) => {
-                  const Icon = methodIcons[entry.method]
-                  const splitReference = getSplitLedgerReference(entry.id)
-                  const entryRepayments = repaymentRequests.get(entry.id) ?? []
-                  const entryReviews = reviewHistory.get(entry.id) ?? []
-                  const pendingRepayments = entryRepayments.filter((request) => request.status === 'pending')
-                  const completedRepayments = entryRepayments.filter((request) => request.status !== 'pending')
-                  const completedReviews = entryReviews.filter((item) => item.status !== 'pending')
-                  return (
-                    <article className="drawer-entry drawer-entry-paid" key={entry.id}>
-                      <span className="method-icon"><Icon size={17} /></span>
-                      <div className="drawer-entry-copy">
-                        <h4>{entry.occasion}</h4>
-                        <p>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
-                      </div>
-                      <div className="drawer-paid-amount">
-                        <strong className="drawer-entry-amount">{money.format(entryOriginalAmount(entry))}</strong>
-                        <span className="drawer-paid-status"><CheckCircle2 size={12} /> Paid</span>
-                      </div>
-                      {entry.screenshots?.length ? (
-                        <PaymentScreenshotGallery screenshots={entry.screenshots} label="Receiver screenshot" compact />
-                      ) : null}
-                      {pendingRepayments.length ? (
-                        <div className="entry-repayment-list">
-                          {pendingRepayments.map((request) => (
-                            <RepaymentRequestCard
-                              key={request.id}
-                              request={request}
-                              direction={direction}
-                              remainingAmount={0}
-                              resolving={resolvingRepaymentId === request.id}
-                              onResolve={onResolveRepayment}
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                      <EntryTransactionHistory
-                        repayments={completedRepayments}
-                        reviews={completedReviews}
-                        direction={direction}
-                        onResolveRepayment={onResolveRepayment}
-                      />
-                    </article>
-                  )
-                })}
+                {paidDueEntries.map((entry) => (
+                  <PaidDueCard
+                    key={entry.id}
+                    entry={entry}
+                    direction={direction}
+                    expanded={expandedPaidEntryId === entry.id}
+                    repayments={repaymentRequests.get(entry.id) ?? []}
+                    reviews={reviewHistory.get(entry.id) ?? []}
+                    resolvingRepaymentId={resolvingRepaymentId}
+                    onResolveRepayment={onResolveRepayment}
+                    onToggle={() => setExpandedPaidEntryId((current) => current === entry.id ? null : entry.id)}
+                  />
+                ))}
               </div> : null}
             </section>
           ) : null}

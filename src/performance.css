@@ -982,6 +982,98 @@
   border-top-color: #dddaf2;
 }
 
+/* Paid entries use same summary-first accordion pattern as open dues. */
+.drawer-entry.drawer-entry-paid {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  contain-intrinsic-size: auto 64px;
+}
+
+.drawer-entry.drawer-entry-paid.is-expanded {
+  border-color: #91cdb7;
+  background: #f7fcf9;
+  box-shadow: 0 0 0 1px rgba(40, 123, 103, 0.08);
+}
+
+.drawer-entry-paid.is-expanded > .paid-due-summary {
+  background: #eaf7f1;
+}
+
+.paid-due-summary {
+  width: 100%;
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto 17px;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.paid-due-summary .drawer-entry-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.paid-due-summary .drawer-entry-copy > strong,
+.paid-due-summary .drawer-entry-copy > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paid-due-summary .drawer-entry-copy > strong {
+  font-size: 11px;
+}
+
+.paid-due-summary .drawer-entry-copy > small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.paid-due-summary > svg {
+  color: #6d817a;
+  transition: transform 140ms ease;
+}
+
+.paid-due-summary > svg.expanded {
+  color: #287b67;
+  transform: rotate(180deg);
+}
+
+.paid-due-details {
+  display: grid;
+  gap: 7px;
+  padding: 8px 9px 9px;
+  border-top: 1px solid #cbe5da;
+}
+
+.paid-due-details > .ledger-proof-block.ledger-proof-compact,
+.paid-due-details > .entry-transaction-history {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.paid-due-details > .ledger-proof-block.ledger-proof-compact {
+  min-height: 0;
+  padding: 4px 0;
+}
+
+.paid-due-details > .entry-transaction-history {
+  border-top: 1px solid var(--line);
+}
+
+.paid-due-details .transaction-history-toggle {
+  min-height: 42px;
+  padding-inline: 0;
+}
+
 .due-card-details > .ledger-proof-block.ledger-proof-compact,
 .due-card-details > .entry-transaction-history {
   border: 0;

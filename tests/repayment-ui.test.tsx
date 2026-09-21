@@ -2,7 +2,7 @@ import { type ComponentProps, useState } from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OpenDueCard, RepaymentModal } from '../src/App'
+import { OpenDueCard, PaidDueCard, RepaymentModal } from '../src/App'
 import { LedgerEntry, RepaymentRequest } from '../src/data'
 
 const entry: LedgerEntry = {
@@ -50,6 +50,16 @@ const pendingPayment: RepaymentRequest = {
   reviewedBy: undefined,
 }
 
+const secondRecordedPayment: RepaymentRequest = {
+  ...recordedPayment,
+  id: 'payment-200',
+  amount: 200,
+  paidAt: '2026-09-20',
+  note: 'Second receipt',
+  createdAt: new Date('2026-09-20T10:00:00Z'),
+  reviewedAt: new Date('2026-09-20T10:00:00Z'),
+}
+
 type OpenDueCardProps = ComponentProps<typeof OpenDueCard>
 
 function TestDueCard(props: Omit<OpenDueCardProps, 'expanded' | 'onToggle'>) {
@@ -79,6 +89,50 @@ function TestDueAccordion() {
           onRequestReview={() => {}}
           onResolveReview={() => {}}
           onRecordPayment={() => {}}
+          onResolveRepayment={() => {}}
+          onToggle={() => setExpandedEntryId((current) => current === item.id ? null : item.id)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function TestPaidAccordion() {
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+  const entries = [
+    {
+      ...entry,
+      id: 'paid-mobile',
+      occasion: 'Mobile purchase credit',
+      amount: 80900,
+      originalAmount: 80900,
+      paidAmount: 80900,
+      remainingAmount: 0,
+      status: 'paid' as const,
+    },
+    {
+      ...entry,
+      id: 'paid-phonepe',
+      occasion: 'Phonepe',
+      amount: 45000,
+      originalAmount: 45000,
+      paidAmount: 45000,
+      remainingAmount: 0,
+      status: 'paid' as const,
+    },
+  ]
+
+  return (
+    <div className="drawer-entries">
+      {entries.map((item, index) => (
+        <PaidDueCard
+          key={item.id}
+          entry={item}
+          direction="receivable"
+          expanded={expandedEntryId === item.id}
+          repayments={[{ ...(index ? secondRecordedPayment : recordedPayment), dueId: item.id }]}
+          reviews={[]}
+          resolvingRepaymentId={null}
           onResolveRepayment={() => {}}
           onToggle={() => setExpandedEntryId((current) => current === item.id ? null : item.id)}
         />
@@ -271,6 +325,62 @@ describe('compact due card', () => {
     expect(screen.queryByRole('button', { name: /Delete Movie due/ })).toBeNull()
     await user.click(screen.getByRole('button', { name: /Repayment history/ }))
     expect(screen.getByText('Recorded')).toBeTruthy()
+  })
+
+  it('keeps only one repayment detail expanded inside history', async () => {
+    const user = userEvent.setup()
+    render(
+      <TestDueCard
+        entry={entry}
+        direction="receivable"
+        repayments={[recordedPayment, secondRecordedPayment]}
+        reviews={[]}
+        resolvingReviewId={null}
+        resolvingRepaymentId={null}
+        onEditDue={vi.fn()}
+        onDeleteDue={vi.fn()}
+        onOpenSplit={vi.fn()}
+        onRequestReview={vi.fn()}
+        onResolveReview={vi.fn()}
+        onRecordPayment={vi.fn()}
+        onResolveRepayment={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /Movie/ }))
+    await user.click(screen.getByRole('button', { name: /Repayment history/ }))
+
+    const firstPayment = screen.getByRole('button', { name: /Offline friend paid.*₹400.*Recorded/ })
+    const secondPayment = screen.getByRole('button', { name: /Offline friend paid.*₹200.*Recorded/ })
+    await user.click(firstPayment)
+    expect(screen.getByText('Received offline')).toBeTruthy()
+
+    await user.click(secondPayment)
+    expect(firstPayment.getAttribute('aria-expanded')).toBe('false')
+    expect(secondPayment.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByText('Received offline')).toBeNull()
+    expect(screen.getByText('Second receipt')).toBeTruthy()
+  })
+
+  it('keeps paid dues compact and opens only one paid card', async () => {
+    const user = userEvent.setup()
+    render(<TestPaidAccordion />)
+
+    const mobileSummary = screen.getByRole('button', { name: /Mobile purchase credit/ })
+    const phonepeSummary = screen.getByRole('button', { name: /Phonepe/ })
+    expect(mobileSummary.getAttribute('aria-expanded')).toBe('false')
+    expect(phonepeSummary.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('Repayment history')).toBeNull()
+
+    await user.click(mobileSummary)
+    expect(mobileSummary.getAttribute('aria-expanded')).toBe('true')
+    expect(phonepeSummary.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByText('Repayment history')).toBeTruthy()
+
+    await user.click(phonepeSummary)
+    expect(mobileSummary.getAttribute('aria-expanded')).toBe('false')
+    expect(phonepeSummary.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getAllByText('Repayment history')).toHaveLength(1)
   })
 
   it('blocks conflicting actions while a borrower payment awaits review', async () => {
