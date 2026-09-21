@@ -824,6 +824,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.activity-tabs {
+  width: 100%;
+}
+
 .drawer-entry-list {
   gap: 7px;
 }

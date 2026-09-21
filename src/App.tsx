@@ -3842,9 +3842,6 @@ function TallyBackApp() {
               </section>
             ) : view === 'activity' ? (
               <section className="activity-view">
-                <div className="page-heading activity-heading">
-                  <div><h1>Activity</h1></div>
-                </div>
                 <div className="activity-tabs">
                   <button className={direction === 'receivable' ? 'active' : ''} onClick={() => setDirection('receivable')}>To receive</button>
                   <button className={direction === 'payable' ? 'active' : ''} onClick={() => setDirection('payable')}>To pay</button>
