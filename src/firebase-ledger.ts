@@ -84,6 +84,7 @@ export async function createEntry(entry: LedgerEntry, uid: string) {
     paidAmount: 0,
     remainingAmount: entry.amount,
     status: 'open',
+    historyStarted: false,
     createdBy: uid,
   }
   const batch = writeBatch(database)
@@ -104,6 +105,7 @@ export async function createEntry(entry: LedgerEntry, uid: string) {
     method: entry.method,
     date: entry.date,
     status: 'open',
+    historyStarted: false,
     createdBy: uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

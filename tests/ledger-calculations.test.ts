@@ -56,6 +56,11 @@ describe('partial repayment calculations', () => {
     expect(() => applyApprovedPayment(entry(), 1001)).toThrow('cannot exceed remaining due')
   })
 
+  it('rejects sub-paise payment amounts instead of silently rounding them', () => {
+    expect(() => applyApprovedPayment(entry(), 0.009)).toThrow('two decimal places')
+    expect(() => applyApprovedPayment(entry(), 10.001)).toThrow('two decimal places')
+  })
+
   it('updates balance only for accepted requests', () => {
     expect(applyRepaymentDecision(entry(), 400, 'rejected')).toEqual({
       originalAmount: 1000,

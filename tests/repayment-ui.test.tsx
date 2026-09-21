@@ -39,6 +39,16 @@ const recordedPayment: RepaymentRequest = {
   reviewedBy: 'lender-id',
 }
 
+const pendingPayment: RepaymentRequest = {
+  ...recordedPayment,
+  id: 'payment-pending',
+  amount: 700,
+  status: 'pending',
+  recordedBy: undefined,
+  reviewedAt: undefined,
+  reviewedBy: undefined,
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -72,6 +82,20 @@ describe('record payment sheet', () => {
     expect(screen.getByRole('alert').textContent).toContain('Add at least one')
     expect(onSend).not.toHaveBeenCalled()
   })
+
+  it('rejects amounts smaller than one paise precision', async () => {
+    vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const onSend = vi.fn()
+    const user = userEvent.setup()
+    render(<RepaymentModal entry={entry} mode="record" onClose={vi.fn()} onSend={onSend} />)
+
+    await user.clear(screen.getByRole('textbox', { name: /amount paid/i }))
+    await user.type(screen.getByRole('textbox', { name: /amount paid/i }), '10.001')
+    await user.click(screen.getByRole('button', { name: 'Save payment' }))
+
+    expect(screen.getByRole('alert').textContent).toContain('two decimal places')
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })
 
 describe('compact due card', () => {
@@ -102,7 +126,61 @@ describe('compact due card', () => {
 
     await user.click(summary)
     expect(screen.getByText('Transaction history')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Delete Movie due/ })).toBeNull()
     await user.click(screen.getByRole('button', { name: /Transaction history/ }))
     expect(screen.getByText('Recorded')).toBeTruthy()
+  })
+
+  it('blocks conflicting actions while a borrower payment awaits review', async () => {
+    const user = userEvent.setup()
+    render(
+      <OpenDueCard
+        entry={{ ...entry, pendingRepaymentId: pendingPayment.id }}
+        direction="payable"
+        repayments={[pendingPayment]}
+        reviews={[]}
+        resolvingReviewId={null}
+        resolvingRepaymentId={null}
+        onEditDue={vi.fn()}
+        onDeleteDue={vi.fn()}
+        onOpenSplit={vi.fn()}
+        onRequestReview={vi.fn()}
+        onResolveReview={vi.fn()}
+        onRecordPayment={vi.fn()}
+        onResolveRepayment={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /Movie/ }))
+    expect(screen.queryByRole('button', { name: 'Record payment' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Already paid' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Report issue' })).toBeNull()
+  })
+
+  it('keeps rejection available but disables an over-balance approval', async () => {
+    const user = userEvent.setup()
+    render(
+      <OpenDueCard
+        entry={{ ...entry, pendingRepaymentId: pendingPayment.id }}
+        direction="receivable"
+        repayments={[pendingPayment]}
+        reviews={[]}
+        resolvingReviewId={null}
+        resolvingRepaymentId={null}
+        onEditDue={vi.fn()}
+        onDeleteDue={vi.fn()}
+        onOpenSplit={vi.fn()}
+        onRequestReview={vi.fn()}
+        onResolveReview={vi.fn()}
+        onRecordPayment={vi.fn()}
+        onResolveRepayment={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /Movie/ }))
+    await user.click(screen.getByRole('button', { name: /Offline friend/ }))
+    expect(screen.getByText(/Only ₹600 remains/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Accept payment' }).hasAttribute('disabled')).toBe(true)
   })
 })

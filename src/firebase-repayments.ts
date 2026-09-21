@@ -6,6 +6,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  deleteField,
   where,
 } from 'firebase/firestore'
 import {
@@ -18,7 +19,7 @@ import {
 import { activityDocument } from './firebase-activity'
 import { db } from './firebase'
 import { getSplitLedgerReference } from './data'
-import { applyApprovedPayment, applyRepaymentDecision, entryRemainingAmount } from './ledger-calculations'
+import { applyApprovedPayment, applyRepaymentDecision, entryRemainingAmount, hasValidMoneyPrecision } from './ledger-calculations'
 
 export type RepaymentDraft = {
   amount: number
@@ -48,37 +49,43 @@ export async function createRepaymentRequest(
   if (!Number.isFinite(draft.amount) || draft.amount <= 0) {
     throw new Error('Payment amount must be greater than zero.')
   }
+  if (!hasValidMoneyPrecision(draft.amount)) {
+    throw new Error('Payment amount can have at most two decimal places.')
+  }
   if (!draft.proofScreenshots.length) throw new Error('Add at least one payment-proof screenshot.')
   if (draft.proofScreenshots.length > 5) throw new Error('Add no more than five payment-proof screenshots.')
 
   const database = requireDatabase()
   const requestRef = doc(collection(database, 'repaymentRequests'))
   const entryRef = doc(database, 'ledgerEntries', entry.id)
-  const activity = activityDocument(
-    entry,
-    borrowerId,
-    borrower,
-    'repayment_submitted',
-    requestRef.id,
-    {
-      amount: draft.amount,
-      eventDate: draft.paidAt,
-      method: draft.method,
-      note: draft.note,
-      status: 'pending',
-    },
-  )
 
   await runTransaction(database, async (transaction) => {
     const entrySnapshot = await transaction.get(entryRef)
     if (!entrySnapshot.exists()) throw new Error('This due no longer exists.')
     const liveEntry = { id: entrySnapshot.id, ...entrySnapshot.data() } as LedgerEntry
+    if (liveEntry.pendingRepaymentId) {
+      throw new Error('This due already has a payment waiting for review.')
+    }
     if (draft.amount > entryRemainingAmount(liveEntry)) {
       throw new Error('Payment amount cannot exceed remaining due.')
     }
 
     const lenderPhone = phoneIdentity(liveEntry.lender.phone)
     const borrowerPhone = phoneIdentity(liveEntry.borrower.phone)
+    const activity = activityDocument(
+      liveEntry,
+      borrowerId,
+      borrower,
+      'repayment_submitted',
+      requestRef.id,
+      {
+        amount: draft.amount,
+        eventDate: draft.paidAt,
+        method: draft.method,
+        note: draft.note,
+        status: 'pending',
+      },
+    )
     transaction.set(requestRef, {
       dueId: liveEntry.id,
       lenderId: liveEntry.createdBy,
@@ -94,6 +101,11 @@ export async function createRepaymentRequest(
       note: draft.note.trim().slice(0, 280),
       status: 'pending',
       createdAt: serverTimestamp(),
+    })
+    transaction.update(entryRef, {
+      pendingRepaymentId: requestRef.id,
+      historyStarted: true,
+      updatedAt: serverTimestamp(),
     })
     transaction.set(activity.ref, activity.data)
   })
@@ -147,6 +159,9 @@ export async function resolveRepaymentRequest(
     if (liveRequest.lenderId !== lenderId || phoneIdentity(lender.phone) !== liveRequest.lenderPhone) {
       throw new Error('Only lender can review this payment.')
     }
+    if (liveEntry.pendingRepaymentId && liveEntry.pendingRepaymentId !== liveRequest.id) {
+      throw new Error('A newer payment request is waiting for review. Refresh and retry.')
+    }
 
     const splitReference = decision === 'accepted' ? getSplitLedgerReference(liveEntry.id) : null
     const nextBalance = decision === 'accepted'
@@ -179,11 +194,20 @@ export async function resolveRepaymentRequest(
     )
     transaction.set(resolutionActivityRef, resolutionActivity.data)
 
-    if (!nextBalance) return
+    if (!nextBalance) {
+      transaction.update(entryRef, {
+        ...(liveEntry.pendingRepaymentId === liveRequest.id ? { pendingRepaymentId: deleteField() } : {}),
+        historyStarted: true,
+        updatedAt: serverTimestamp(),
+      })
+      return
+    }
 
     transaction.update(entryRef, {
       ...nextBalance,
       lastRepaymentId: liveRequest.id,
+      ...(liveEntry.pendingRepaymentId === liveRequest.id ? { pendingRepaymentId: deleteField() } : {}),
+      historyStarted: true,
       ...(nextBalance.status === 'paid' ? { settledAt: new Date().toISOString() } : {}),
       updatedAt: serverTimestamp(),
     })
@@ -233,6 +257,9 @@ export async function recordLenderPayment(
   if (!Number.isFinite(draft.amount) || draft.amount <= 0) {
     throw new Error('Payment amount must be greater than zero.')
   }
+  if (!hasValidMoneyPrecision(draft.amount)) {
+    throw new Error('Payment amount can have at most two decimal places.')
+  }
   if (draft.proofScreenshots.length > 5) throw new Error('Add no more than five payment-proof screenshots.')
 
   const database = requireDatabase()
@@ -248,6 +275,9 @@ export async function recordLenderPayment(
     const liveEntry = { id: entrySnapshot.id, ...entrySnapshot.data() } as LedgerEntry
     if (liveEntry.createdBy !== lenderId || phoneIdentity(lender.phone) !== phoneIdentity(liveEntry.lender.phone)) {
       throw new Error('Only lender can record payment on this due.')
+    }
+    if (liveEntry.pendingRepaymentId) {
+      throw new Error('Review the pending payment before recording another one.')
     }
     const nextBalance = applyApprovedPayment(liveEntry, draft.amount)
     const splitReference = nextBalance.status === 'paid' ? getSplitLedgerReference(liveEntry.id) : null
@@ -278,6 +308,7 @@ export async function recordLenderPayment(
     transaction.update(entryRef, {
       ...nextBalance,
       lastRepaymentId: requestRef.id,
+      historyStarted: true,
       ...(nextBalance.status === 'paid' ? { settledAt: recordedAt } : {}),
       updatedAt: serverTimestamp(),
     })

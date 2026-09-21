@@ -40,6 +40,8 @@ export type LedgerEntry = {
   createdAt?: unknown
   updatedAt?: unknown
   lastRepaymentId?: string
+  pendingRepaymentId?: string
+  historyStarted?: boolean
   review?: LedgerReview
   screenshots?: PaymentScreenshot[]
 }

@@ -109,6 +109,7 @@ import {
   entryOriginalAmount,
   entryPaidAmount,
   entryRemainingAmount,
+  hasValidMoneyPrecision,
   isPaidEntry,
   outstandingTotals,
 } from './ledger-calculations'
@@ -1243,6 +1244,10 @@ function AddEntryModal({
       setError('Add the amount and what it was for.')
       return
     }
+    if (!hasValidMoneyPrecision(numericAmount)) {
+      setError('Enter an amount with no more than two decimal places.')
+      return
+    }
 
     if (!existingScreenshots.length && !screenshots.length) {
       setError('Add at least one payment screenshot.')
@@ -1767,6 +1772,10 @@ export function RepaymentModal({
       setError('Enter payment amount greater than zero.')
       return
     }
+    if (!hasValidMoneyPrecision(numericAmount)) {
+      setError('Enter an amount with no more than two decimal places.')
+      return
+    }
     if (numericAmount > remainingDue) {
       setError(`Amount cannot exceed remaining due of ${money.format(remainingDue)}.`)
       return
@@ -1979,7 +1988,7 @@ function ReviewRequestModal({
     event.target.value = ''
     const invalid = selected.find((file) => !acceptedScreenshotTypes.includes(file.type) || file.size > MAX_SCREENSHOT_SIZE)
     if (invalid) {
-      setError('Use JPG, PNG, WebP, or HEIC images up to 6 MB each.')
+      setError('Use JPG, PNG, or WebP images up to 6 MB each.')
       return
     }
     setProofFiles((current) => [...current, ...selected].slice(0, MAX_PAYMENT_SCREENSHOTS))
@@ -1991,6 +2000,10 @@ function ReviewRequestModal({
     const proposedAmount = kind === 'amount' ? Number(amount) : 0
     if (kind === 'amount' && (!Number.isFinite(proposedAmount) || proposedAmount <= 0)) {
       setError('Enter the amount you believe is correct.')
+      return
+    }
+    if (kind === 'amount' && !hasValidMoneyPrecision(proposedAmount)) {
+      setError('Enter an amount with no more than two decimal places.')
       return
     }
     if (kind === 'amount' && proposedAmount < entryPaidAmount(entry)) {
@@ -2296,11 +2309,13 @@ function DeleteContactModal({
 function RepaymentRequestCard({
   request,
   direction,
+  remainingAmount,
   resolving,
   onResolve,
 }: {
   request: RepaymentRequest
   direction: Direction
+  remainingAmount?: number
   resolving: boolean
   onResolve: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
 }) {
@@ -2309,6 +2324,13 @@ function RepaymentRequestCard({
     ? 'Recorded'
     : request.status === 'pending' ? 'Pending approval' : request.status === 'accepted' ? 'Accepted' : 'Rejected'
   const needsAction = request.status === 'pending' && direction === 'receivable'
+  const unavailableReason = needsAction && remainingAmount !== undefined
+    ? remainingAmount <= 0
+      ? 'This due is already paid. Reject this outstanding request.'
+      : request.amount > remainingAmount
+        ? `Only ${money.format(remainingAmount)} remains. Reject this request and ask for a corrected amount.`
+        : ''
+    : ''
   const [expanded, setExpanded] = useState(false)
   return (
     <article className={`repayment-request-card ${request.status}`}>
@@ -2336,14 +2358,17 @@ function RepaymentRequestCard({
           {request.note ? <p>{request.note}</p> : null}
           {request.proofScreenshots.length ? <PaymentScreenshotGallery screenshots={request.proofScreenshots} compact /> : null}
           {needsAction ? (
-            <div className="repayment-review-actions">
-              <button type="button" className="repayment-reject" disabled={resolving} onClick={() => onResolve(request, 'rejected')}>
-                Reject
-              </button>
-              <button type="button" className="repayment-accept" disabled={resolving} onClick={() => onResolve(request, 'accepted')}>
-                {resolving ? 'Reviewing…' : 'Accept payment'}
-              </button>
-            </div>
+            <>
+              {unavailableReason ? <small className="repayment-waiting">{unavailableReason}</small> : null}
+              <div className="repayment-review-actions">
+                <button type="button" className="repayment-reject" disabled={resolving} onClick={() => onResolve(request, 'rejected')}>
+                  Reject
+                </button>
+                <button type="button" className="repayment-accept" disabled={resolving || Boolean(unavailableReason)} onClick={() => onResolve(request, 'accepted')}>
+                  {resolving ? 'Reviewing…' : 'Accept payment'}
+                </button>
+              </div>
+            </>
           ) : request.status === 'pending' ? (
             <small className="repayment-waiting">Waiting for lender approval.</small>
           ) : null}
@@ -2492,6 +2517,7 @@ export function OpenDueCard({
   const partiallyPaid = canonicalEntryStatus(entry) === 'partially_paid'
   const attentionCount = pendingRepayments.length + (review ? 1 : 0)
   const historyCount = completedRepayments.length + completedReviews.length
+  const hasHistory = Boolean(entry.historyStarted || review || repayments.length || reviews.length)
 
   return (
     <article className={`drawer-entry due-card ${partiallyPaid ? 'drawer-entry-partial' : ''}`}>
@@ -2551,6 +2577,7 @@ export function OpenDueCard({
                   key={request.id}
                   request={request}
                   direction={direction}
+                  remainingAmount={remainingAmount}
                   resolving={resolvingRepaymentId === request.id}
                   onResolve={onResolveRepayment}
                 />
@@ -2571,15 +2598,15 @@ export function OpenDueCard({
               {splitReference
                 ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
                 : <>
-                    <button className="entry-edit-action" type="button" onClick={() => onEditDue(entry)} aria-label={`Edit ${entry.occasion} due`}><Pencil size={15} /> Edit</button>
-                    <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button>
+                    {!review && !pendingRepayments.length ? <button className="entry-edit-action" type="button" onClick={() => onEditDue(entry)} aria-label={`Edit ${entry.occasion} due`}><Pencil size={15} /> Edit</button> : null}
+                    {!hasHistory ? <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button> : null}
                   </>}
             </div>
           ) : (
             <div className="drawer-entry-actions payer-actions">
-              <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><CheckCircle2 size={15} /> Record payment</button>
-              {!review ? <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Already paid</button> : null}
-              {!review ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report issue</button> : null}
+              {!review && !pendingRepayments.length ? <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><CheckCircle2 size={15} /> Record payment</button> : null}
+              {!review && !pendingRepayments.length ? <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Already paid</button> : null}
+              {!review && !pendingRepayments.length ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report issue</button> : null}
             </div>
           )}
         </div>
@@ -2834,6 +2861,7 @@ function PersonDrawer({
                               key={request.id}
                               request={request}
                               direction={direction}
+                              remainingAmount={0}
                               resolving={resolvingRepaymentId === request.id}
                               onResolve={onResolveRepayment}
                             />
@@ -3352,6 +3380,7 @@ function TallyBackApp() {
             paidAmount: 0,
             remainingAmount: entry.amount,
             status: 'open',
+            historyStarted: false,
             createdBy: creatorUid,
           },
           ...currentEntries.filter((currentEntry) => currentEntry.id !== entry.id),
@@ -3399,6 +3428,14 @@ function TallyBackApp() {
 
   async function deleteDue(entry: LedgerEntry) {
     if (getSplitLedgerReference(entry.id)) throw new Error('Manage split dues from Splits.')
+    if (
+      entry.historyStarted
+      || entry.review
+      || (repaymentsByDue.get(entry.id)?.length ?? 0) > 0
+      || (reviewRecordsByDue.get(entry.id)?.length ?? 0) > 0
+    ) {
+      throw new Error('Dues with payment or review history cannot be deleted.')
+    }
     await deleteFirebaseEntry(entry.id)
 
     if (entry.screenshots?.length) {

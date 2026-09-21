@@ -2,6 +2,10 @@ import { LedgerEntry, LedgerEntryStatus } from './data'
 
 const moneyPrecision = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
 
+export function hasValidMoneyPrecision(value: number) {
+  return Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) < 0.000001
+}
+
 export function entryOriginalAmount(entry: Pick<LedgerEntry, 'amount' | 'originalAmount'>) {
   return moneyPrecision(entry.originalAmount ?? entry.amount)
 }
@@ -37,8 +41,9 @@ export function applyApprovedPayment(
   const originalAmount = entryOriginalAmount(entry)
   const currentPaid = entryPaidAmount(entry)
   const currentRemaining = entryRemainingAmount(entry)
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) throw new Error('Payment amount must be greater than zero.')
+  if (!hasValidMoneyPrecision(paymentAmount)) throw new Error('Payment amount can have at most two decimal places.')
   const amount = moneyPrecision(paymentAmount)
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment amount must be greater than zero.')
   if (amount > currentRemaining) throw new Error('Payment amount cannot exceed remaining due.')
 
   const paidAmount = moneyPrecision(currentPaid + amount)

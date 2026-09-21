@@ -102,8 +102,9 @@ export async function createReviewRequest(entry: LedgerEntry, uid: string, draft
     if (!entrySnapshot.exists()) throw new Error('This due no longer exists.')
     const liveEntry = { id: entrySnapshot.id, ...entrySnapshot.data() } as LedgerEntry
     if (liveEntry.review?.status === 'pending') throw new Error('This due already has a pending review.')
+    if (liveEntry.pendingRepaymentId) throw new Error('Wait for the pending payment to be reviewed first.')
     transaction.set(reviewRef, reviewRecord)
-    transaction.update(entryRef, { review, updatedAt: serverTimestamp() })
+    transaction.update(entryRef, { review, historyStarted: true, updatedAt: serverTimestamp() })
     transaction.set(activity.ref, activity.data)
   })
 }
@@ -158,6 +159,7 @@ export async function resolveReviewRequest(
     const paidAmount = entryPaidAmount(liveEntry)
     const updates: Record<string, unknown> = {
       review: deleteField(),
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     }
     if (decision === 'approved' && liveReview.kind === 'amount') {

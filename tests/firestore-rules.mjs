@@ -6,6 +6,7 @@ import {
 } from '@firebase/rules-unit-testing'
 import {
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -237,6 +238,7 @@ try {
     method: 'UPI',
     date: '2026-09-21',
     status: 'open',
+    historyStarted: false,
     createdBy: lenderUid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -261,6 +263,27 @@ try {
     occurredAt: serverTimestamp(),
   })
   await assertSucceeds(createDue.commit())
+  const deletableDueId = 'deletable-open-due'
+  await assertSucceeds(setDoc(doc(lenderDatabase, 'ledgerEntries', deletableDueId), {
+    lender: { ...lender, name: 'Aakash Updated' },
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 25,
+    originalAmount: 25,
+    paidAmount: 0,
+    remainingAmount: 25,
+    occasion: 'Mistaken new due',
+    method: 'Cash',
+    date: '2026-09-21',
+    status: 'open',
+    historyStarted: false,
+    createdBy: lenderUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }))
+  await assertSucceeds(deleteDoc(doc(lenderDatabase, 'ledgerEntries', deletableDueId)))
   const editDue = writeBatch(lenderDatabase)
   editDue.update(doc(lenderDatabase, 'ledgerEntries', newDueId), {
     amount: 400,
@@ -322,6 +345,7 @@ try {
     occurredAt: serverTimestamp(),
   })
   await assertSucceeds(markDuePaid.commit())
+  await assertFails(deleteDoc(doc(lenderDatabase, 'ledgerEntries', newDueId)))
 
   const reviewId = 'already-paid-review'
   const reviewProof = {
@@ -348,6 +372,7 @@ try {
   const submitReview = writeBatch(borrowerDatabase)
   submitReview.update(doc(borrowerDatabase, 'ledgerEntries', 'already-paid-review-due'), {
     review: embeddedReview,
+    historyStarted: true,
     updatedAt: serverTimestamp(),
   })
   submitReview.set(doc(borrowerDatabase, 'ledgerReviews', reviewId), {
@@ -425,8 +450,32 @@ try {
   await assertSucceeds(getDoc(doc(borrowerDatabase, 'ledgerEntries', dueId)))
   await assertFails(getDoc(doc(strangerDatabase, 'ledgerEntries', dueId)))
 
-  await assertSucceeds(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-400'), repayment('payment-400', 400)))
-  await assertFails(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-too-large'), repayment('payment-too-large', 1001)))
+  const submitRepayment = (requestId, amount, targetDueId = dueId) => runTransaction(borrowerDatabase, async (transaction) => {
+    const entryRef = doc(borrowerDatabase, 'ledgerEntries', targetDueId)
+    const requestRef = doc(borrowerDatabase, 'repaymentRequests', requestId)
+    await transaction.get(entryRef)
+    const request = {
+      ...repayment(requestId, amount),
+      dueId: targetDueId,
+      ...(targetDueId === dueId ? {} : {
+        proofScreenshots: [{
+          ...screenshot(requestId),
+          path: `ledgerEntries/${targetDueId}/${borrowerUid}/proof.png`,
+        }],
+      }),
+    }
+    transaction.set(requestRef, request)
+    transaction.update(entryRef, {
+      pendingRepaymentId: requestId,
+      historyStarted: true,
+      updatedAt: serverTimestamp(),
+    })
+  })
+
+  await assertSucceeds(submitRepayment('payment-400', 400))
+  await assertFails(submitRepayment('payment-duplicate', 100))
+  await assertFails(submitRepayment('payment-too-large', 1001, 'rejection-due'))
+  await assertFails(submitRepayment('payment-sub-paise', 0.009, 'rejection-due'))
   await assertFails(updateDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-400'), {
     status: 'accepted',
     reviewedAt: serverTimestamp(),
@@ -448,6 +497,8 @@ try {
       remainingAmount: 600,
       status: 'partially_paid',
       lastRepaymentId: 'payment-400',
+      pendingRepaymentId: deleteField(),
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     })
   }))
@@ -469,7 +520,7 @@ try {
     })
   }))
 
-  await assertSucceeds(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-600'), repayment('payment-600', 600)))
+  await assertSucceeds(submitRepayment('payment-600', 600))
   await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
     const requestRef = doc(lenderDatabase, 'repaymentRequests', 'payment-600')
     const entryRef = doc(lenderDatabase, 'ledgerEntries', dueId)
@@ -486,6 +537,8 @@ try {
       status: 'paid',
       settledAt: new Date().toISOString(),
       lastRepaymentId: 'payment-600',
+      pendingRepaymentId: deleteField(),
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     })
   }))
@@ -495,19 +548,23 @@ try {
     throw new Error('Paid due was removed or retained an outstanding balance.')
   }
 
-  await assertSucceeds(setDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-rejected'), {
-    ...repayment('payment-rejected', 50),
-    dueId: 'rejection-due',
-    proofScreenshots: [{
-      ...screenshot('payment-rejected'),
-      path: `ledgerEntries/rejection-due/${borrowerUid}/proof.png`,
-    }],
+  await assertSucceeds(submitRepayment('payment-rejected', 50, 'rejection-due'))
+  await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'payment-rejected')
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', 'rejection-due')
+    await Promise.all([transaction.get(requestRef), transaction.get(entryRef)])
+    transaction.update(requestRef, {
+      status: 'rejected',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: lenderUid,
+    })
+    transaction.update(entryRef, {
+      pendingRepaymentId: deleteField(),
+      historyStarted: true,
+      updatedAt: serverTimestamp(),
+    })
   }))
-  await assertSucceeds(updateDoc(doc(lenderDatabase, 'repaymentRequests', 'payment-rejected'), {
-    status: 'rejected',
-    reviewedAt: serverTimestamp(),
-    reviewedBy: lenderUid,
-  }))
+  await assertFails(deleteDoc(doc(lenderDatabase, 'ledgerEntries', 'rejection-due')))
 
   await assertSucceeds(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-submitted'), activity(
     'repayment_submitted',
@@ -604,6 +661,25 @@ try {
     lenderRecordedPayment(100),
   ))
 
+  await assertFails(runTransaction(lenderDatabase, async (transaction) => {
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', decimalDueId)
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'direct-sub-paise')
+    await transaction.get(entryRef)
+    transaction.set(requestRef, {
+      ...lenderRecordedPayment(0.009),
+      dueId: decimalDueId,
+    })
+    transaction.update(entryRef, {
+      originalAmount: 0.3,
+      paidAmount: 0.109,
+      remainingAmount: 0.191,
+      status: 'partially_paid',
+      lastRepaymentId: 'direct-sub-paise',
+      historyStarted: true,
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
   await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
     const entryRef = doc(lenderDatabase, 'ledgerEntries', lenderDirectDueId)
     const requestRef = doc(lenderDatabase, 'repaymentRequests', 'direct-400')
@@ -615,6 +691,7 @@ try {
       remainingAmount: 600,
       status: 'partially_paid',
       lastRepaymentId: 'direct-400',
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     })
     transaction.set(doc(lenderDatabase, 'ledgerActivities', 'direct-400-recorded'), {
@@ -647,6 +724,7 @@ try {
       remainingAmount: 500,
       status: 'partially_paid',
       lastRepaymentId: 'borrower-spoofed-direct',
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     })
   }))
@@ -662,6 +740,7 @@ try {
       remainingAmount: -1,
       status: 'partially_paid',
       lastRepaymentId: 'direct-overpayment',
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     })
   }))
@@ -678,6 +757,7 @@ try {
       status: 'paid',
       settledAt: new Date().toISOString(),
       lastRepaymentId: 'direct-600',
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     })
   }))
@@ -702,6 +782,7 @@ try {
       status: 'paid',
       settledAt: new Date().toISOString(),
       lastRepaymentId: 'direct-decimal-020',
+      historyStarted: true,
       updatedAt: serverTimestamp(),
     })
   }))
