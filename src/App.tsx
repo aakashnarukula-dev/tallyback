@@ -2460,21 +2460,41 @@ export function OpenDueCard({
 
   useEffect(() => {
     if (!expanded) return
-    const animationFrame = window.requestAnimationFrame(() => {
+    const scrollCardIntoView = () => {
       const card = cardRef.current
       const scrollContainer = card?.closest('.drawer-entries')
       if (!(card instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return
       if (typeof scrollContainer.scrollTo !== 'function') return
       const cardRect = card.getBoundingClientRect()
       const containerRect = scrollContainer.getBoundingClientRect()
+      const viewportTop = containerRect.top + 8
+      const viewportBottom = containerRect.bottom - 8
+      const availableHeight = viewportBottom - viewportTop
+      let nextScrollTop = scrollContainer.scrollTop
+
+      if (cardRect.height > availableHeight || cardRect.top < viewportTop) {
+        nextScrollTop += cardRect.top - viewportTop
+      } else if (cardRect.bottom > viewportBottom) {
+        nextScrollTop += cardRect.bottom - viewportBottom
+      }
+
       const reduceMotion = typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches
       scrollContainer.scrollTo({
-        top: Math.max(0, scrollContainer.scrollTop + cardRect.top - containerRect.top - 8),
+        top: Math.max(0, nextScrollTop),
         behavior: reduceMotion ? 'auto' : 'smooth',
       })
-    })
-    return () => window.cancelAnimationFrame(animationFrame)
+    }
+
+    const animationFrame = window.requestAnimationFrame(scrollCardIntoView)
+    const pendingImages = Array.from(cardRef.current?.querySelectorAll('img') ?? [])
+      .filter((image) => !image.complete)
+    pendingImages.forEach((image) => image.addEventListener('load', scrollCardIntoView, { once: true }))
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+      pendingImages.forEach((image) => image.removeEventListener('load', scrollCardIntoView))
+    }
   }, [expanded])
 
   return (
@@ -2736,7 +2756,7 @@ function PersonDrawer({
             </div>
           ) : <span className="drawer-topbar-spacer" aria-hidden="true" />}
         </header>
-        <div className={`drawer-entries ${expandedEntryId ? 'has-expanded-due' : ''}`}>
+        <div className="drawer-entries">
           <div className="drawer-section-title">
             <div>
               <h3>{direction === 'receivable' ? `Payments expected from ${firstName}` : `Payments expected by ${firstName}`}</h3>

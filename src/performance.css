@@ -804,10 +804,6 @@
   padding: 11px 12px calc(18px + env(safe-area-inset-bottom));
 }
 
-.drawer-entries.has-expanded-due {
-  padding-bottom: calc(42dvh + env(safe-area-inset-bottom));
-}
-
 .drawer-section-title {
   margin-bottom: 8px;
 }
