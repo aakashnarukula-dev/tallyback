@@ -2386,7 +2386,7 @@ function EntryTransactionHistory({
     : latest.review.status === 'approved' ? 'accepted' : 'rejected'
 
   return (
-    <section className="entry-transaction-history" aria-label="Transaction history">
+    <section className="entry-transaction-history" aria-label="Repayment history">
       <button
         className="transaction-history-toggle"
         type="button"
@@ -2395,7 +2395,7 @@ function EntryTransactionHistory({
       >
         <span className="transaction-history-icon"><History size={14} /></span>
         <span>
-          <strong>Transaction history</strong>
+          <strong>Repayment history</strong>
           <small>{items.length} {items.length === 1 ? 'record' : 'records'} · latest {latestStatus}</small>
         </span>
         <span className="transaction-history-count">{items.length}</span>

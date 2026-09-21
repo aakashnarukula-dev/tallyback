@@ -263,13 +263,13 @@ describe('compact due card', () => {
 
     const summary = screen.getByRole('button', { name: /Movie/ })
     expect(summary.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText('Transaction history')).toBeNull()
+    expect(screen.queryByText('Repayment history')).toBeNull()
     expect(screen.queryByText('Received offline')).toBeNull()
 
     await user.click(summary)
-    expect(screen.getByText('Transaction history')).toBeTruthy()
+    expect(screen.getByText('Repayment history')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Delete Movie due/ })).toBeNull()
-    await user.click(screen.getByRole('button', { name: /Transaction history/ }))
+    await user.click(screen.getByRole('button', { name: /Repayment history/ }))
     expect(screen.getByText('Recorded')).toBeTruthy()
   })
 
