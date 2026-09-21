@@ -7,7 +7,7 @@ import {
 import { PaymentScreenshot } from './data'
 import { storage } from './firebase'
 
-export const MAX_PAYMENT_SCREENSHOTS = 5
+export const MAX_PAYMENT_SCREENSHOTS = 1
 export const MAX_SCREENSHOT_SIZE = 6 * 1024 * 1024
 
 export const acceptedScreenshotTypes = [
@@ -37,6 +37,9 @@ export async function uploadPaymentScreenshots(
   files: File[],
   onProgress?: (completed: number, total: number) => void,
 ): Promise<PaymentScreenshot[]> {
+  if (files.length > MAX_PAYMENT_SCREENSHOTS) {
+    throw new Error('Attach only one screenshot.')
+  }
   const uploaded: PaymentScreenshot[] = []
 
   try {

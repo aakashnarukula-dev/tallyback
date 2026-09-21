@@ -264,6 +264,29 @@ try {
     occurredAt: serverTimestamp(),
   })
   await assertSucceeds(createDue.commit())
+  await assertFails(setDoc(doc(lenderDatabase, 'ledgerEntries', 'multi-screenshot-due'), {
+    lender: { ...lender, name: 'Aakash Updated' },
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 100,
+    originalAmount: 100,
+    paidAmount: 0,
+    remainingAmount: 100,
+    occasion: 'Too many screenshots',
+    method: 'UPI',
+    date: '2026-09-21',
+    status: 'open',
+    historyStarted: false,
+    createdBy: lenderUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    screenshots: [
+      { ...screenshot('due-image-1'), path: `ledgerEntries/multi-screenshot-due/${lenderUid}/proof-1.png` },
+      { ...screenshot('due-image-2'), path: `ledgerEntries/multi-screenshot-due/${lenderUid}/proof-2.png` },
+    ],
+  }))
   const deletableDueId = 'deletable-open-due'
   await assertSucceeds(setDoc(doc(lenderDatabase, 'ledgerEntries', deletableDueId), {
     lender: { ...lender, name: 'Aakash Updated' },
@@ -455,15 +478,16 @@ try {
   await assertSucceeds(getDoc(doc(borrowerDatabase, 'ledgerEntries', dueId)))
   await assertFails(getDoc(doc(strangerDatabase, 'ledgerEntries', dueId)))
 
-  const submitRepayment = (requestId, amount, targetDueId = dueId) => runTransaction(borrowerDatabase, async (transaction) => {
+  const submitRepayment = (requestId, amount, targetDueId = dueId, proofScreenshots) => runTransaction(borrowerDatabase, async (transaction) => {
     const entryRef = doc(borrowerDatabase, 'ledgerEntries', targetDueId)
     const requestRef = doc(borrowerDatabase, 'repaymentRequests', requestId)
     await transaction.get(entryRef)
     const request = {
       ...repayment(requestId, amount),
       dueId: targetDueId,
+      ...(proofScreenshots ? { proofScreenshots } : {}),
       ...(targetDueId === dueId ? {} : {
-        proofScreenshots: [{
+        proofScreenshots: proofScreenshots ?? [{
           ...screenshot(requestId),
           path: `ledgerEntries/${targetDueId}/${borrowerUid}/proof.png`,
         }],
@@ -485,6 +509,10 @@ try {
 
   await assertSucceeds(submitRepayment('payment-400', 400))
   await assertFails(submitRepayment('payment-duplicate', 100))
+  await assertFails(submitRepayment('payment-multiple-screenshots', 100, 'rejection-due', [
+    { ...screenshot('payment-multiple-screenshots-1'), path: `ledgerEntries/rejection-due/${borrowerUid}/proof-1.png` },
+    { ...screenshot('payment-multiple-screenshots-2'), path: `ledgerEntries/rejection-due/${borrowerUid}/proof-2.png` },
+  ]))
   await assertFails(submitRepayment('payment-too-large', 1001, 'rejection-due'))
   await assertFails(submitRepayment('payment-sub-paise', 0.009, 'rejection-due'))
   await assertFails(updateDoc(doc(borrowerDatabase, 'repaymentRequests', 'payment-400'), {
@@ -676,6 +704,25 @@ try {
     doc(lenderDatabase, 'repaymentRequests', 'direct-without-balance'),
     lenderRecordedPayment(100),
   ))
+
+  await assertFails(runTransaction(lenderDatabase, async (transaction) => {
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', lenderDirectDueId)
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'direct-multiple-screenshots')
+    await transaction.get(entryRef)
+    transaction.set(requestRef, lenderRecordedPayment(100, [
+      { ...screenshot('direct-multiple-screenshots-1'), path: `ledgerEntries/${lenderDirectDueId}/${lenderUid}/proof-1.png` },
+      { ...screenshot('direct-multiple-screenshots-2'), path: `ledgerEntries/${lenderDirectDueId}/${lenderUid}/proof-2.png` },
+    ]))
+    transaction.update(entryRef, {
+      originalAmount: 1000,
+      paidAmount: 100,
+      remainingAmount: 900,
+      status: 'partially_paid',
+      lastRepaymentId: 'direct-multiple-screenshots',
+      historyStarted: true,
+      updatedAt: serverTimestamp(),
+    })
+  }))
 
   await assertFails(runTransaction(lenderDatabase, async (transaction) => {
     const entryRef = doc(lenderDatabase, 'ledgerEntries', decimalDueId)

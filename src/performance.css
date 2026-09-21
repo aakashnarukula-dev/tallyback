@@ -510,15 +510,15 @@
 }
 
 .ledger-proof-block.ledger-proof-compact {
-  min-height: 50px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 7px;
+  min-height: 0;
+  display: grid;
+  align-items: stretch;
+  gap: 7px;
+  padding: 7px;
 }
 
 .ledger-proof-compact .ledger-proof-heading {
-  flex: 0 0 auto;
+  width: 100%;
   margin: 0;
 }
 
@@ -527,22 +527,37 @@
 }
 
 .ledger-proof-compact .ledger-proof-heading small {
-  display: none;
+  display: inline;
 }
 
 .ledger-proof-compact .ledger-proof-rail {
+  width: 100%;
   min-width: 0;
-  flex: 1;
-  grid-auto-columns: 44px;
-  gap: 5px;
+  grid-auto-columns: 100%;
+  gap: 8px;
   padding: 0;
 }
 
-.ledger-proof-compact .ledger-proof-item,
+.ledger-proof-compact .ledger-proof-item {
+  width: 100%;
+  height: auto;
+}
+
 .ledger-proof-compact .ledger-proof-image {
-  width: 44px;
-  height: 40px;
-  border-radius: 7px;
+  width: 100%;
+  height: auto;
+  min-height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+}
+
+.ledger-proof-compact .ledger-proof-image img {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: min(60dvh, 520px);
+  object-fit: contain;
 }
 
 .activity-state.partially_paid,
@@ -789,6 +804,10 @@
   padding: 11px 12px calc(18px + env(safe-area-inset-bottom));
 }
 
+.drawer-entries.has-expanded-due {
+  padding-bottom: calc(42dvh + env(safe-area-inset-bottom));
+}
+
 .drawer-section-title {
   margin-bottom: 8px;
 }
@@ -839,6 +858,21 @@
   padding: 0;
   overflow: hidden;
   contain-intrinsic-size: auto 64px;
+}
+
+.drawer-entry.due-card.is-expanded {
+  border-color: #c8c5ee;
+  background: #fbfaff;
+  box-shadow: 0 0 0 1px rgba(103, 99, 178, 0.08);
+}
+
+.drawer-entry.due-card.is-expanded > .due-summary {
+  background: #f5f3fc;
+}
+
+.drawer-entry.due-card.is-expanded .drawer-entry-amount,
+.drawer-entry.due-card.is-expanded > .due-summary > svg {
+  color: #5855a4;
 }
 
 .drawer-entry > .due-summary {
@@ -917,6 +951,10 @@
   border-top: 1px solid var(--line);
 }
 
+.drawer-entry.due-card.is-expanded .due-card-details {
+  border-top-color: #dddaf2;
+}
+
 .due-card-details > .ledger-proof-block.ledger-proof-compact,
 .due-card-details > .entry-transaction-history {
   border: 0;
@@ -925,8 +963,8 @@
 }
 
 .due-card-details > .ledger-proof-block.ledger-proof-compact {
-  min-height: 42px;
-  padding: 2px 0;
+  min-height: 0;
+  padding: 4px 0;
 }
 
 .due-card-details > .entry-transaction-history {

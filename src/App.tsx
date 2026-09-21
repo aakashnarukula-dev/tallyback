@@ -486,7 +486,7 @@ function actionableFirebaseError(error: unknown, fallback: string) {
   if (code === 'storage/unauthenticated' || code === 'auth/id-token-expired' || code === 'auth/user-token-expired') {
     return 'Access expired. Sign in again, then retry.'
   }
-  if (code === 'storage/unauthorized') return 'Payment proof access denied. Refresh this due and retry.'
+  if (code === 'storage/unauthorized') return 'Screenshot access denied. Refresh this due and retry.'
   if (code === 'permission-denied') return 'Payment update was denied. Refresh this due and confirm the signed-in account.'
   if (code === 'storage/retry-limit-exceeded' || code === 'unavailable') return 'Connection interrupted. Check internet and retry.'
   if (code === 'storage/quota-exceeded' || code === 'resource-exhausted') return 'Upload limit reached. Try again later.'
@@ -1205,7 +1205,7 @@ function AddEntryModal({
     }
 
     if (accepted.length > remainingSlots) {
-      validationError = `You can attach up to ${MAX_PAYMENT_SCREENSHOTS} screenshots.`
+      validationError = 'Attach only one screenshot.'
     }
 
     const nextScreenshots = accepted.slice(0, Math.max(remainingSlots, 0)).map((file) => {
@@ -1257,7 +1257,7 @@ function AddEntryModal({
     }
 
     if (!existingScreenshots.length && !screenshots.length) {
-      setError('Add at least one payment screenshot.')
+      setError('Add one receiver screenshot.')
       return
     }
 
@@ -1410,8 +1410,8 @@ function AddEntryModal({
             <section className="payment-upload" aria-labelledby="payment-upload-title">
               <div className="payment-upload-heading">
                 <div>
-                  <strong id="payment-upload-title">Amount sent &amp; payment proof</strong>
-                  <span>Required · 1–5 screenshots, 6 MB each</span>
+                  <strong id="payment-upload-title">Amount sent &amp; receiver screenshot</strong>
+                  <span>Required · 1 screenshot · 6 MB maximum</span>
                 </div>
                 <button
                   className="payment-upload-button"
@@ -1426,25 +1426,25 @@ function AddEntryModal({
                   className="visually-hidden"
                   type="file"
                   accept={acceptedScreenshotTypes.join(',')}
-                  multiple
                   onChange={addScreenshots}
-                  aria-label="Upload payment screenshots"
+                  aria-label="Upload receiver screenshots"
                 />
               </div>
 
               {existingScreenshots.length ? (
                 <PaymentScreenshotGallery
                   screenshots={existingScreenshots}
+                  label="Receiver screenshot"
                   onRemove={removeExistingScreenshot}
                   removingDisabled={saving}
                 />
               ) : null}
 
               {screenshots.length ? (
-                <div className="payment-preview-rail" aria-label="Selected payment screenshots">
+                <div className="payment-preview-rail" aria-label="Selected receiver screenshots">
                   {screenshots.map((screenshot, index) => (
                     <figure className="payment-preview-card" key={screenshot.id}>
-                      <img src={screenshot.previewUrl} alt={`Payment screenshot ${index + 1}`} />
+                      <img src={screenshot.previewUrl} alt={`Receiver screenshot ${index + 1}`} />
                       <button
                         type="button"
                         onClick={() => removeScreenshot(screenshot.id)}
@@ -1476,11 +1476,13 @@ function AddEntryModal({
 
 function PaymentScreenshotGallery({
   screenshots,
+  label,
   onRemove,
   removingDisabled = false,
   compact = false,
 }: {
   screenshots: PaymentScreenshot[]
+  label: string
   onRemove?: (path: string) => void
   removingDisabled?: boolean
   compact?: boolean
@@ -1549,7 +1551,7 @@ function PaymentScreenshotGallery({
   return (
     <div className={`ledger-proof-block ${compact ? 'ledger-proof-compact' : ''}`}>
       <div className="ledger-proof-heading">
-        <span><ImageIcon size={13} /> {compact ? 'Proof' : 'Payment proof'}</span>
+        <span><ImageIcon size={13} /> {label}</span>
         <small>{screenshots.length} {screenshots.length === 1 ? 'image' : 'images'}</small>
       </div>
       <div className="ledger-proof-rail">
@@ -1563,7 +1565,7 @@ function PaymentScreenshotGallery({
                 className="ledger-proof-image"
                 onClick={() => imageUrl && setActiveScreenshot({ url: imageUrl, name: screenshot.name })}
                 disabled={!imageUrl}
-                aria-label={`View payment screenshot ${index + 1}`}
+                aria-label={`View ${label.toLowerCase()} ${index + 1}`}
               >
                 {imageUrl ? (
                   <img src={imageUrl} alt="" />
@@ -1579,7 +1581,7 @@ function PaymentScreenshotGallery({
                   className="ledger-proof-remove"
                   onClick={() => onRemove(screenshot.path)}
                   disabled={removingDisabled}
-                  aria-label={`Remove ${screenshot.name || `payment screenshot ${index + 1}`}`}
+                  aria-label={`Remove ${screenshot.name || `${label.toLowerCase()} ${index + 1}`}`}
                 >
                   <Trash2 size={13} />
                 </button>
@@ -1591,7 +1593,7 @@ function PaymentScreenshotGallery({
 
       {activeScreenshot ? createPortal(
         <div className="screenshot-lightbox" role="presentation" onPointerDown={closeActiveScreenshot}>
-          <section role="dialog" aria-modal="true" aria-label="Payment screenshot" onPointerDown={(event) => event.stopPropagation()}>
+          <section role="dialog" aria-modal="true" aria-label={label} onPointerDown={(event) => event.stopPropagation()}>
             <img src={activeScreenshot.url} alt={activeScreenshot.name} />
           </section>
         </div>,
@@ -1613,6 +1615,7 @@ export function RepaymentModal({
   onSend: (draft: RepaymentSubmissionDraft) => Promise<void>
 }) {
   const remainingDue = entryRemainingAmount(entry)
+  const screenshotLabel = mode === 'record' ? 'Receiver screenshot' : 'Payer screenshot'
   const [amount, setAmount] = useState(String(remainingDue))
   const [date, setDate] = useState(today())
   const [method, setMethod] = useState<PaymentMethod>('UPI')
@@ -1752,7 +1755,7 @@ export function RepaymentModal({
     })
 
     const available = MAX_PAYMENT_SCREENSHOTS - proofFiles.length
-    if (accepted.length > available) validationError = 'Add no more than five screenshots.'
+    if (accepted.length > available) validationError = 'Attach only one screenshot.'
     const next = accepted.slice(0, Math.max(0, available)).map((file) => {
       const previewUrl = URL.createObjectURL(file)
       previewUrlsRef.current.add(previewUrl)
@@ -1796,7 +1799,7 @@ export function RepaymentModal({
       return
     }
     if (mode === 'request' && !proofFiles.length) {
-      setError('Add at least one payment-proof screenshot.')
+      setError('Add at least one payer screenshot.')
       return
     }
 
@@ -1892,8 +1895,8 @@ export function RepaymentModal({
           <section className="repayment-proof" aria-labelledby="repayment-proof-title">
             <div className="repayment-proof-heading">
               <div>
-                <strong id="repayment-proof-title">Payment proof</strong>
-                <span>{mode === 'request' ? 'Required · 1–5 screenshots' : 'Optional · up to 5 screenshots'} · 6 MB each</span>
+                <strong id="repayment-proof-title">{screenshotLabel}</strong>
+                <span>{mode === 'request' ? 'Required · 1 screenshot' : 'Optional · 1 screenshot maximum'} · 6 MB</span>
               </div>
               <button
                 className="payment-upload-button"
@@ -1908,7 +1911,7 @@ export function RepaymentModal({
                 className="visually-hidden"
                 type="file"
                 accept={acceptedScreenshotTypes.join(',')}
-                multiple
+                aria-label={`Upload ${screenshotLabel.toLowerCase()}`}
                 onChange={addProofFiles}
               />
             </div>
@@ -1917,7 +1920,7 @@ export function RepaymentModal({
                 {proofFiles.map((proof, index) => (
                   <figure key={proof.id} className="repayment-preview-card">
                     <button type="button" className="repayment-preview-open" onClick={() => setActivePreview({ url: proof.previewUrl, name: proof.file.name })}>
-                      <img src={proof.previewUrl} alt={`Payment proof ${index + 1}`} />
+                      <img src={proof.previewUrl} alt={`${screenshotLabel} ${index + 1}`} />
                     </button>
                     <button type="button" className="repayment-preview-remove" onClick={() => removeProof(proof.id)} disabled={working}>
                       <Trash2 size={12} /> Remove
@@ -1929,7 +1932,7 @@ export function RepaymentModal({
           </section>
 
           <label className="repayment-note">
-            Note <span>(optional)</span>
+            Note
             <textarea
               value={note}
               onChange={(event) => setNote(event.target.value.slice(0, 280))}
@@ -2276,7 +2279,13 @@ function RepaymentRequestCard({
             <span><CalendarDays size={13} /> {lenderRecorded ? 'Recorded' : 'Submitted'} {dateTime.format(new Date(timestampMillis(request.createdAt)))}</span>
           </div>
           {request.note ? <p>{request.note}</p> : null}
-          {request.proofScreenshots.length ? <PaymentScreenshotGallery screenshots={request.proofScreenshots} compact /> : null}
+          {request.proofScreenshots.length ? (
+            <PaymentScreenshotGallery
+              screenshots={request.proofScreenshots}
+              label={lenderRecorded ? 'Receiver screenshot' : 'Payer screenshot'}
+              compact
+            />
+          ) : null}
           {needsAction ? (
             <>
               {unavailableReason ? <small className="repayment-waiting">{unavailableReason}</small> : null}
@@ -2320,8 +2329,14 @@ function ReviewHistoryCard({ review }: { review: LedgerReviewRecord }) {
       </button>
       {expanded ? (
         <div className="transaction-disclosure-body">
-          <p>{review.note || (review.kind === 'paid' ? 'Payment proof submitted.' : 'Due details reviewed.')}</p>
-          {review.proofScreenshots.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} compact /> : null}
+          <p>{review.note || (review.kind === 'paid' ? 'Payer screenshot submitted.' : 'Due details reviewed.')}</p>
+          {review.proofScreenshots.length ? (
+            <PaymentScreenshotGallery
+              screenshots={review.proofScreenshots}
+              label={review.kind === 'paid' ? 'Payer screenshot' : 'Review screenshot'}
+              compact
+            />
+          ) : null}
         </div>
       ) : null}
     </article>
@@ -2398,6 +2413,7 @@ function EntryTransactionHistory({
 export function OpenDueCard({
   entry,
   direction,
+  expanded,
   review,
   repayments,
   reviews,
@@ -2410,9 +2426,11 @@ export function OpenDueCard({
   onResolveReview,
   onRecordPayment,
   onResolveRepayment,
+  onToggle,
 }: {
   entry: LedgerEntry
   direction: Direction
+  expanded: boolean
   review?: LedgerReview
   repayments: RepaymentRequest[]
   reviews: LedgerReviewRecord[]
@@ -2425,8 +2443,9 @@ export function OpenDueCard({
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
   onRecordPayment: (entry: LedgerEntry) => void
   onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
+  onToggle: () => void
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const cardRef = useRef<HTMLElement>(null)
   const Icon = methodIcons[entry.method]
   const splitReference = getSplitLedgerReference(entry.id)
   const pendingRepayments = repayments.filter((request) => request.status === 'pending')
@@ -2439,13 +2458,32 @@ export function OpenDueCard({
   const historyCount = completedRepayments.length + completedReviews.length
   const hasHistory = Boolean(entry.historyStarted || review || repayments.length || reviews.length)
 
+  useEffect(() => {
+    if (!expanded) return
+    const animationFrame = window.requestAnimationFrame(() => {
+      const card = cardRef.current
+      const scrollContainer = card?.closest('.drawer-entries')
+      if (!(card instanceof HTMLElement) || !(scrollContainer instanceof HTMLElement)) return
+      if (typeof scrollContainer.scrollTo !== 'function') return
+      const cardRect = card.getBoundingClientRect()
+      const containerRect = scrollContainer.getBoundingClientRect()
+      const reduceMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      scrollContainer.scrollTo({
+        top: Math.max(0, scrollContainer.scrollTop + cardRect.top - containerRect.top - 8),
+        behavior: reduceMotion ? 'auto' : 'smooth',
+      })
+    })
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [expanded])
+
   return (
-    <article className={`drawer-entry due-card ${partiallyPaid ? 'drawer-entry-partial' : ''}`}>
+    <article ref={cardRef} className={`drawer-entry due-card ${expanded ? 'is-expanded' : ''} ${partiallyPaid ? 'drawer-entry-partial' : ''}`}>
       <button
         className="due-summary"
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((open) => !open)}
+        onClick={onToggle}
       >
         <span className="method-icon"><Icon size={17} /></span>
         <span className="drawer-entry-copy">
@@ -2467,7 +2505,7 @@ export function OpenDueCard({
 
       {expanded ? (
         <div className="due-card-details">
-          {entry.screenshots?.length ? <PaymentScreenshotGallery screenshots={entry.screenshots} compact /> : null}
+          {entry.screenshots?.length ? <PaymentScreenshotGallery screenshots={entry.screenshots} label="Receiver screenshot" compact /> : null}
           {review ? (
             <div className={`entry-review ${direction}`}>
               <div>
@@ -2478,7 +2516,9 @@ export function OpenDueCard({
                     : `${entry.borrower.name} says this has already been paid.`}
                 </strong>
                 {review.note ? <p>“{review.note}”</p> : null}
-                {review.proofScreenshots?.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} compact /> : null}
+                {review.proofScreenshots?.length ? (
+                  <PaymentScreenshotGallery screenshots={review.proofScreenshots} label="Payer screenshot" compact />
+                ) : null}
               </div>
               {direction === 'receivable' ? (
                 <div className="review-actions">
@@ -2587,6 +2627,7 @@ function PersonDrawer({
   const dragYRef = useRef(0)
   const [dragging, setDragging] = useState(false)
   const [closing, setClosing] = useState(false)
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
   const [paidExpanded, setPaidExpanded] = useState(false)
 
   function closeSheet() {
@@ -2695,11 +2736,10 @@ function PersonDrawer({
             </div>
           ) : <span className="drawer-topbar-spacer" aria-hidden="true" />}
         </header>
-        <div className="drawer-entries">
+        <div className={`drawer-entries ${expandedEntryId ? 'has-expanded-due' : ''}`}>
           <div className="drawer-section-title">
             <div>
-              <h3>Open dues</h3>
-              <p>{direction === 'receivable' ? `Payments expected from ${firstName}` : `Payments recorded by ${firstName}’s lenders`}</p>
+              <h3>{direction === 'receivable' ? `Payments expected from ${firstName}` : `Payments expected by ${firstName}`}</h3>
             </div>
             <span>{summary.openCount}</span>
           </div>
@@ -2720,6 +2760,7 @@ function PersonDrawer({
                 key={entry.id}
                 entry={entry}
                 direction={direction}
+                expanded={expandedEntryId === entry.id}
                 review={pendingReviews.get(entry.id)}
                 repayments={repaymentRequests.get(entry.id) ?? []}
                 reviews={reviewHistory.get(entry.id) ?? []}
@@ -2732,6 +2773,7 @@ function PersonDrawer({
                 onResolveReview={onResolveReview}
                 onRecordPayment={onRecordPayment}
                 onResolveRepayment={onResolveRepayment}
+                onToggle={() => setExpandedEntryId((current) => current === entry.id ? null : entry.id)}
               />
             ))}
           </div>
@@ -2771,7 +2813,7 @@ function PersonDrawer({
                         <span className="drawer-paid-status"><CheckCircle2 size={12} /> Paid</span>
                       </div>
                       {entry.screenshots?.length ? (
-                        <PaymentScreenshotGallery screenshots={entry.screenshots} compact />
+                        <PaymentScreenshotGallery screenshots={entry.screenshots} label="Receiver screenshot" compact />
                       ) : null}
                       {pendingRepayments.length ? (
                         <div className="entry-repayment-list">
@@ -3403,7 +3445,7 @@ function TallyBackApp() {
         proofScreenshots = await uploadPaymentScreenshots(entry.id, firebaseUser.uid, proofFiles)
       }
       await createReviewRequest(entry, firebaseUser.uid, { ...draft, proofScreenshots })
-      setToast(draft.kind === 'paid' ? 'Payment proof sent for confirmation.' : 'Correction sent for review.')
+      setToast(draft.kind === 'paid' ? 'Payer screenshot sent for confirmation.' : 'Correction sent for review.')
     } catch (error) {
       if (proofScreenshots.length) {
         try {
@@ -3879,7 +3921,7 @@ function TallyBackApp() {
                       ? review.kind === 'paid'
                         ? approved ? 'Payment marked as paid' : 'Payment claim rejected'
                         : approved ? 'Correction accepted' : 'Correction rejected'
-                      : review.kind === 'paid' ? 'Payment proof submitted' : 'Mistake reported'
+                      : review.kind === 'paid' ? 'Payer screenshot submitted' : 'Mistake reported'
                     const eventState = isResolution ? review.status : 'review'
                     return (
                       <article className="activity-row review-activity-row" key={item.id}>

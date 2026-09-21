@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -16,6 +17,7 @@ import { activityDocument } from './firebase-activity'
 import { getSplitLedgerReference, LedgerEntry, Person } from './data'
 import { db } from './firebase'
 import { entryOriginalAmount, entryPaidAmount } from './ledger-calculations'
+import { MAX_PAYMENT_SCREENSHOTS } from './firebase-storage'
 
 export const toE164 = (phone: string) => {
   const digits = phone.replace(/\D/g, '').slice(-10)
@@ -72,6 +74,7 @@ export function subscribeToEntries(
 }
 
 export async function createEntry(entry: LedgerEntry, uid: string) {
+  if ((entry.screenshots?.length ?? 0) > MAX_PAYMENT_SCREENSHOTS) throw new Error('Attach only one receiver screenshot.')
   const database = requireDatabase()
   const lenderPhone = toE164(entry.lender.phone)
   const borrowerPhone = toE164(entry.borrower.phone)
@@ -135,7 +138,7 @@ export async function updateEntry(entry: LedgerEntry, uid: string, actor: Person
     occasion: entry.occasion,
     method: entry.method,
     date: entry.date,
-    ...(entry.screenshots?.length ? { screenshots: entry.screenshots } : {}),
+    screenshots: entry.screenshots?.length ? entry.screenshots : deleteField(),
     updatedAt: serverTimestamp(),
   })
   const activity = activityDocument(

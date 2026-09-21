@@ -20,6 +20,7 @@ import { activityDocument } from './firebase-activity'
 import { db } from './firebase'
 import { getSplitLedgerReference } from './data'
 import { applyApprovedPayment, applyRepaymentDecision, entryRemainingAmount, hasValidMoneyPrecision } from './ledger-calculations'
+import { MAX_PAYMENT_SCREENSHOTS } from './firebase-storage'
 
 export type RepaymentDraft = {
   amount: number
@@ -67,8 +68,8 @@ export async function createRepaymentRequest(
     throw new Error('Payment amount can have at most two decimal places.')
   }
   assertValidPaymentDate(draft.paidAt)
-  if (!draft.proofScreenshots.length) throw new Error('Add at least one payment-proof screenshot.')
-  if (draft.proofScreenshots.length > 5) throw new Error('Add no more than five payment-proof screenshots.')
+  if (!draft.proofScreenshots.length) throw new Error('Add one payer screenshot.')
+  if (draft.proofScreenshots.length > MAX_PAYMENT_SCREENSHOTS) throw new Error('Attach only one payer screenshot.')
 
   const database = requireDatabase()
   const requestRef = doc(collection(database, 'repaymentRequests'))
@@ -276,7 +277,7 @@ export async function recordLenderPayment(
     throw new Error('Payment amount can have at most two decimal places.')
   }
   assertValidPaymentDate(draft.paidAt)
-  if (draft.proofScreenshots.length > 5) throw new Error('Add no more than five payment-proof screenshots.')
+  if (draft.proofScreenshots.length > MAX_PAYMENT_SCREENSHOTS) throw new Error('Attach only one receiver screenshot.')
 
   const database = requireDatabase()
   const requestRef = doc(collection(database, 'repaymentRequests'))

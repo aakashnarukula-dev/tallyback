@@ -14,6 +14,7 @@ import { getSplitLedgerReference, LedgerEntry, LedgerReview, LedgerReviewRecord,
 import { db } from './firebase'
 import { toE164 } from './firebase-ledger'
 import { entryOriginalAmount, entryPaidAmount, entryRemainingAmount } from './ledger-calculations'
+import { MAX_PAYMENT_SCREENSHOTS } from './firebase-storage'
 
 export type ReviewDraft = {
   kind: ReviewKind
@@ -32,6 +33,7 @@ function requireDatabase() {
 
 export async function createReviewRequest(entry: LedgerEntry, uid: string, draft: ReviewDraft) {
   if (!entry.createdBy) throw new Error('This entry is missing its owner.')
+  if (draft.proofScreenshots.length > MAX_PAYMENT_SCREENSHOTS) throw new Error('Attach only one screenshot.')
   const database = requireDatabase()
   const borrowerPhone = toE164(entry.borrower.phone)
   const lenderPhone = toE164(entry.lender.phone)

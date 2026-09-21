@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { type ComponentProps, useState } from 'react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenDueCard, RepaymentModal } from '../src/App'
@@ -49,6 +50,43 @@ const pendingPayment: RepaymentRequest = {
   reviewedBy: undefined,
 }
 
+type OpenDueCardProps = ComponentProps<typeof OpenDueCard>
+
+function TestDueCard(props: Omit<OpenDueCardProps, 'expanded' | 'onToggle'>) {
+  const [expanded, setExpanded] = useState(false)
+  return <OpenDueCard {...props} expanded={expanded} onToggle={() => setExpanded((open) => !open)} />
+}
+
+function TestDueAccordion() {
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+  const entries = [entry, { ...entry, id: 'due-dinner', occasion: 'Dinner' }]
+
+  return (
+    <div className="drawer-entries">
+      {entries.map((item) => (
+        <OpenDueCard
+          key={item.id}
+          entry={item}
+          direction="receivable"
+          expanded={expandedEntryId === item.id}
+          repayments={[]}
+          reviews={[]}
+          resolvingReviewId={null}
+          resolvingRepaymentId={null}
+          onEditDue={() => {}}
+          onDeleteDue={() => {}}
+          onOpenSplit={() => {}}
+          onRequestReview={() => {}}
+          onResolveReview={() => {}}
+          onRecordPayment={() => {}}
+          onResolveRepayment={() => {}}
+          onToggle={() => setExpandedEntryId((current) => current === item.id ? null : item.id)}
+        />
+      ))}
+    </div>
+  )
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -62,7 +100,9 @@ describe('record payment sheet', () => {
     const user = userEvent.setup()
     render(<RepaymentModal entry={entry} mode="record" onClose={vi.fn()} onSend={onSend} />)
 
-    expect(screen.getByText(/Optional · up to 5 screenshots/)).toBeTruthy()
+    expect(screen.getByText('Receiver screenshot')).toBeTruthy()
+    expect(screen.getByText(/Optional · 1 screenshot maximum/)).toBeTruthy()
+    expect((screen.getByLabelText('Upload receiver screenshot') as HTMLInputElement).multiple).toBe(false)
     expect(document.activeElement).not.toBe(screen.getByRole('textbox', { name: /note/i }))
     await user.clear(screen.getByRole('textbox', { name: /amount paid/i }))
     await user.type(screen.getByRole('textbox', { name: /amount paid/i }), '250')
@@ -77,6 +117,8 @@ describe('record payment sheet', () => {
     const user = userEvent.setup()
     render(<RepaymentModal entry={entry} mode="request" onClose={vi.fn()} onSend={onSend} />)
 
+    expect(screen.getByText('Payer screenshot')).toBeTruthy()
+    expect((screen.getByLabelText('Upload payer screenshot') as HTMLInputElement).multiple).toBe(false)
     expect(screen.getByRole('button', { name: 'Add screenshots' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Add screenshot showing completed payment/i })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Send for approval' }))
@@ -120,10 +162,41 @@ describe('record payment sheet', () => {
 })
 
 describe('compact due card', () => {
+  it('keeps only one due card expanded', async () => {
+    const user = userEvent.setup()
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
+    const scrollTo = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: scrollTo })
+
+    try {
+      render(<TestDueAccordion />)
+
+      const movieSummary = screen.getByRole('button', { name: /Movie/ })
+      const dinnerSummary = screen.getByRole('button', { name: /Dinner/ })
+
+      await user.click(movieSummary)
+      expect(movieSummary.getAttribute('aria-expanded')).toBe('true')
+      expect(dinnerSummary.getAttribute('aria-expanded')).toBe('false')
+      await waitFor(() => expect(scrollTo).toHaveBeenCalled())
+
+      scrollTo.mockClear()
+      await user.click(dinnerSummary)
+      expect(movieSummary.getAttribute('aria-expanded')).toBe('false')
+      expect(dinnerSummary.getAttribute('aria-expanded')).toBe('true')
+      await waitFor(() => expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })))
+
+      await user.click(dinnerSummary)
+      expect(dinnerSummary.getAttribute('aria-expanded')).toBe('false')
+    } finally {
+      if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo)
+      else delete (HTMLElement.prototype as HTMLElement & { scrollTo?: unknown }).scrollTo
+    }
+  })
+
   it('uses one borrower payment action for full or partial payments', async () => {
     const user = userEvent.setup()
     render(
-      <OpenDueCard
+      <TestDueCard
         entry={entry}
         direction="payable"
         repayments={[]}
@@ -140,16 +213,24 @@ describe('compact due card', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: /Movie/ }))
+    const summary = screen.getByRole('button', { name: /Movie/ })
+    const card = summary.closest('article')
+    expect(card?.classList.contains('is-expanded')).toBe(false)
+
+    await user.click(summary)
+    expect(card?.classList.contains('is-expanded')).toBe(true)
     expect(screen.getAllByRole('button', { name: 'Record payment' })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Already paid' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Report issue' })).toBeTruthy()
+
+    await user.click(summary)
+    expect(card?.classList.contains('is-expanded')).toBe(false)
   })
 
   it('mounts history only after due expands and labels lender records correctly', async () => {
     const user = userEvent.setup()
     render(
-      <OpenDueCard
+      <TestDueCard
         entry={entry}
         direction="receivable"
         repayments={[recordedPayment]}
@@ -181,7 +262,7 @@ describe('compact due card', () => {
   it('blocks conflicting actions while a borrower payment awaits review', async () => {
     const user = userEvent.setup()
     render(
-      <OpenDueCard
+      <TestDueCard
         entry={{ ...entry, pendingRepaymentId: pendingPayment.id }}
         direction="payable"
         repayments={[pendingPayment]}
@@ -207,7 +288,7 @@ describe('compact due card', () => {
   it('keeps rejection available but disables an over-balance approval', async () => {
     const user = userEvent.setup()
     render(
-      <OpenDueCard
+      <TestDueCard
         entry={{ ...entry, pendingRepaymentId: pendingPayment.id }}
         direction="receivable"
         repayments={[pendingPayment]}

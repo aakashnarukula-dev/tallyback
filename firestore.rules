@@ -89,6 +89,13 @@ service cloud.firestore {
         && (screenshots.size() < 5 || validScreenshot(screenshots[4]));
     }
 
+    function validSingleScreenshotList(screenshots, required) {
+      return screenshots is list
+        && screenshots.size() <= 1
+        && (!required || screenshots.size() == 1)
+        && (screenshots.size() == 0 || validScreenshot(screenshots[0]));
+    }
+
     function validEntryScreenshots(data) {
       return !data.keys().hasAny(['screenshots'])
         || validScreenshotList(data.screenshots, true);
@@ -170,7 +177,7 @@ service cloud.firestore {
         )
         && review.note is string
         && review.note.size() <= 280
-        && validScreenshotList(review.proofScreenshots, review.kind == 'paid')
+        && validSingleScreenshotList(review.proofScreenshots, review.kind == 'paid')
         && review.status == 'pending'
         && review.createdAt is timestamp
         && review.updatedAt is timestamp
@@ -295,6 +302,11 @@ service cloud.firestore {
         && after.date is string
         && after.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && validEntryScreenshots(after)
+        && (
+          !after.keys().hasAny(['screenshots'])
+          || validSingleScreenshotList(after.screenshots, true)
+          || (before.keys().hasAny(['screenshots']) && after.screenshots == before.screenshots)
+        )
         && after.updatedAt == request.time;
     }
 
@@ -530,7 +542,7 @@ service cloud.firestore {
         && data.method in ['UPI', 'Credit card', 'Cash', 'Bank transfer', 'Personal funds']
         && data.paidAt is string
         && data.paidAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && validScreenshotList(data.proofScreenshots, true)
+        && validSingleScreenshotList(data.proofScreenshots, true)
         && data.note is string
         && data.note.size() <= 280
         && data.status == 'pending'
@@ -591,7 +603,7 @@ service cloud.firestore {
         && data.method in ['UPI', 'Credit card', 'Cash', 'Bank transfer', 'Personal funds']
         && data.paidAt is string
         && data.paidAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && validScreenshotList(data.proofScreenshots, false)
+        && validSingleScreenshotList(data.proofScreenshots, false)
         && data.note is string
         && data.note.size() <= 280
         && data.status == 'accepted'
@@ -1034,6 +1046,10 @@ service cloud.firestore {
       allow read: if isParticipant(resource.data);
       allow create: if validEntry(request.resource.data)
         && isParticipant(request.resource.data)
+        && (
+          !request.resource.data.keys().hasAny(['screenshots'])
+          || validSingleScreenshotList(request.resource.data.screenshots, true)
+        )
         && request.resource.data.keys().hasAll(['originalAmount', 'paidAmount', 'remainingAmount'])
         && request.resource.data.originalAmount == request.resource.data.amount
         && request.resource.data.paidAmount == 0
