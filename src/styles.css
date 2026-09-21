@@ -1803,50 +1803,6 @@ a {
   font-size: 9px;
 }
 
-.review-reason-picker {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 17px;
-}
-
-.review-reason-picker button {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 9px;
-  padding: 13px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--paper);
-  color: var(--muted);
-  text-align: left;
-}
-
-.review-reason-picker button.active {
-  border-color: #e2b6ab;
-  background: var(--coral-soft);
-  color: var(--coral);
-}
-
-.review-reason-picker span {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.review-reason-picker strong {
-  color: var(--ink);
-  font-size: 11px;
-}
-
-.review-reason-picker small {
-  font-size: 8px;
-  line-height: 1.35;
-}
-
 .review-field {
   display: flex;
   flex-direction: column;
@@ -2845,10 +2801,6 @@ a {
   }
 
   .direction-picker {
-    grid-template-columns: 1fr;
-  }
-
-  .review-reason-picker {
     grid-template-columns: 1fr;
   }
 

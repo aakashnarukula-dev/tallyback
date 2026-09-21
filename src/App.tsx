@@ -51,7 +51,6 @@ import {
   PaymentMethod,
   Person,
   RepaymentRequest,
-  ReviewKind,
   SavedContact,
 } from './data'
 import { auth, isFirebaseConfigured } from './firebase'
@@ -1967,16 +1966,13 @@ export function RepaymentModal({
 
 function ReviewRequestModal({
   entry,
-  initialKind,
   onClose,
   onSend,
 }: {
   entry: LedgerEntry
-  initialKind: ReviewKind
   onClose: () => void
   onSend: (draft: ReviewSubmissionDraft) => Promise<void>
 }) {
-  const [kind, setKind] = useState<ReviewDraft['kind']>(initialKind)
   const [amount, setAmount] = useState(String(entryOriginalAmount(entry)))
   const [method, setMethod] = useState<PaymentMethod>(entry.method)
   const [occasion, setOccasion] = useState(entry.occasion)
@@ -1984,51 +1980,36 @@ function ReviewRequestModal({
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
-  const [proofFiles, setProofFiles] = useState<File[]>([])
-  const proofInputRef = useRef<HTMLInputElement>(null)
 
   useBrowserBackDismiss(() => {
     if (!working) onClose()
   })
 
-  function addProofFiles(event: ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files ?? [])
-    event.target.value = ''
-    const invalid = selected.find((file) => !acceptedScreenshotTypes.includes(file.type) || file.size > MAX_SCREENSHOT_SIZE)
-    if (invalid) {
-      setError('Use JPG, PNG, or WebP images up to 6 MB each.')
-      return
-    }
-    setProofFiles((current) => [...current, ...selected].slice(0, MAX_PAYMENT_SCREENSHOTS))
-    setError('')
-  }
-
   async function submit(event: FormEvent) {
     event.preventDefault()
-    const proposedAmount = kind === 'amount' ? Number(amount) : 0
-    if (kind === 'amount' && (!Number.isFinite(proposedAmount) || proposedAmount <= 0)) {
+    const proposedAmount = Number(amount)
+    if (!Number.isFinite(proposedAmount) || proposedAmount <= 0) {
       setError('Enter the amount you believe is correct.')
       return
     }
-    if (kind === 'amount' && !hasValidMoneyPrecision(proposedAmount)) {
+    if (!hasValidMoneyPrecision(proposedAmount)) {
       setError('Enter an amount with no more than two decimal places.')
       return
     }
-    if (kind === 'amount' && proposedAmount < entryPaidAmount(entry)) {
+    if (proposedAmount < entryPaidAmount(entry)) {
       setError(`Amount cannot be less than ${money.format(entryPaidAmount(entry))} already approved.`)
       return
     }
-    if (kind === 'amount' && !occasion.trim()) {
+    if (!occasion.trim()) {
       setError('Enter what the payment was for.')
       return
     }
-    if (kind === 'amount' && !date) {
+    if (!date) {
       setError('Choose the correct date.')
       return
     }
     if (
-      kind === 'amount'
-      && proposedAmount === entryOriginalAmount(entry)
+      proposedAmount === entryOriginalAmount(entry)
       && method === entry.method
       && occasion.trim() === entry.occasion
       && date === entry.date
@@ -2036,22 +2017,18 @@ function ReviewRequestModal({
       setError('Change at least one detail before sending for review.')
       return
     }
-    if (kind === 'paid' && proofFiles.length === 0) {
-      setError('Add at least one payment proof screenshot.')
-      return
-    }
 
     try {
       setWorking(true)
       setError('')
       await onSend({
-        kind,
+        kind: 'amount',
         proposedAmount,
         proposedMethod: method,
         proposedOccasion: occasion.trim(),
         proposedDate: date,
         note,
-        proofFiles,
+        proofFiles: [],
       })
       onClose()
     } catch {
@@ -2072,8 +2049,8 @@ function ReviewRequestModal({
       >
         <div className="modal-header">
           <div>
-            <p className="modal-kicker">{kind === 'paid' ? 'Confirm a payment' : 'Request a correction'}</p>
-            <h2 id="review-request-title">{kind === 'paid' ? 'Share payment proof' : 'What needs reviewing?'}</h2>
+            <p className="modal-kicker">Request a correction</p>
+            <h2 id="review-request-title">What needs reviewing?</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
             <X size={20} />
@@ -2092,114 +2069,49 @@ function ReviewRequestModal({
         </div>
 
         <form onSubmit={submit}>
-          <div className="review-step-heading">
-            <span>1</span>
-            <div>
-              <strong>What happened?</strong>
-              <small>Choose the option that best describes the problem.</small>
-            </div>
-          </div>
-          <div className="review-reason-picker" aria-label="Choose what is incorrect">
-            <button type="button" className={kind === 'amount' ? 'active' : ''} aria-pressed={kind === 'amount'} onClick={() => setKind('amount')}>
-              <Banknote size={18} />
-              <strong>Wrong details</strong>
-              {kind === 'amount' ? <Check size={17} /> : null}
-            </button>
-            <button type="button" className={kind === 'paid' ? 'active' : ''} aria-pressed={kind === 'paid'} onClick={() => setKind('paid')}>
-              <CheckCircle2 size={18} />
-              <strong>Already paid</strong>
-              {kind === 'paid' ? <Check size={17} /> : null}
-            </button>
-          </div>
-          <p className="review-choice-help">
-            {kind === 'amount'
-              ? 'Correct the amount, payment method, purpose, or date.'
-              : 'Share proof that you sent the payment and ask the lender to close this due.'}
-          </p>
-
           <div className="review-response-section">
             <div className="review-step-heading">
-              <span>2</span>
+              <span>1</span>
               <div>
-                <strong>{kind === 'amount' ? 'Add the correct details' : 'Add payment proof'}</strong>
-                <small>{kind === 'amount' ? 'Only changed details will be sent for review.' : 'At least one screenshot is required.'}</small>
+                <strong>Add correct details</strong>
+                <small>Only changed details will be sent for review.</small>
               </div>
             </div>
 
-            {kind === 'amount' ? (
-              <div className="review-details-grid">
-                <label className="review-detail-field">
-                  Amount
-                  <div className="money-input">
-                    <span>₹</span>
-                    <input
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
-                      inputMode="decimal"
-                    />
-                  </div>
-                </label>
-                <label className="review-detail-field">
-                  Paid using
-                  <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
-                    {methods.map((item) => <option key={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label className="review-detail-field">
-                  What was it for?
-                  <input value={occasion} onChange={(event) => setOccasion(event.target.value)} />
-                </label>
-                <div className="review-detail-field form-field">
-                  <span>Date</span>
-                  <DatePicker value={date} onChange={setDate} />
+            <div className="review-details-grid">
+              <label className="review-detail-field">
+                Amount
+                <div className="money-input">
+                  <span>₹</span>
+                  <input
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
+                    inputMode="decimal"
+                  />
                 </div>
+              </label>
+              <label className="review-detail-field">
+                Paid using
+                <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
+                  {methods.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="review-detail-field">
+                What was it for?
+                <input value={occasion} onChange={(event) => setOccasion(event.target.value)} />
+              </label>
+              <div className="review-detail-field form-field">
+                <span>Date</span>
+                <DatePicker value={date} onChange={setDate} />
               </div>
-            ) : null}
-
-            {kind === 'paid' ? (
-              <section className="review-proof-upload">
-                <div>
-                  <strong>Proof of payment</strong>
-                  <span>1–5 screenshots · 6 MB each</span>
-                </div>
-                <input
-                  ref={proofInputRef}
-                  type="file"
-                  accept={acceptedScreenshotTypes.join(',')}
-                  multiple
-                  hidden
-                  onChange={addProofFiles}
-                />
-                <button
-                  type="button"
-                  className="payment-upload-button"
-                  onClick={() => proofInputRef.current?.click()}
-                  disabled={proofFiles.length >= MAX_PAYMENT_SCREENSHOTS}
-                >
-                  <ImagePlus size={17} /> Add proof
-                </button>
-                {proofFiles.length ? (
-                  <div className="review-proof-files">
-                    {proofFiles.map((file, index) => (
-                      <div key={`${file.name}-${file.lastModified}-${index}`}>
-                        <ImageIcon size={16} />
-                        <span>{file.name}</span>
-                        <button type="button" onClick={() => setProofFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${file.name}`}>
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
+            </div>
 
             <label className="review-field">
               Note <span>(optional)</span>
               <textarea
                 value={note}
                 onChange={(event) => setNote(event.target.value.slice(0, 280))}
-                placeholder={kind === 'amount' ? 'Explain what looks wrong…' : 'Mention when or how you paid…'}
+                placeholder="Explain what looks wrong…"
                 rows={3}
               />
             </label>
@@ -2509,7 +2421,7 @@ export function OpenDueCard({
   onEditDue: (entry: LedgerEntry) => void
   onDeleteDue: (entry: LedgerEntry) => void
   onOpenSplit: () => void
-  onRequestReview: (entry: LedgerEntry, kind: ReviewKind) => void
+  onRequestReview: (entry: LedgerEntry) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
   onRecordPayment: (entry: LedgerEntry) => void
   onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
@@ -2613,8 +2525,7 @@ export function OpenDueCard({
           ) : (
             <div className="drawer-entry-actions payer-actions">
               {!review && !pendingRepayments.length ? <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><CheckCircle2 size={15} /> Record payment</button> : null}
-              {!review && !pendingRepayments.length ? <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Already paid</button> : null}
-              {!review && !pendingRepayments.length ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report issue</button> : null}
+              {!review && !pendingRepayments.length ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry)}><Flag size={15} /> Report issue</button> : null}
             </div>
           )}
         </div>
@@ -2655,7 +2566,7 @@ function PersonDrawer({
   onDeleteContact: (person: Person) => void
   onDeleteDue: (entry: LedgerEntry) => void
   onOpenSplit: () => void
-  onRequestReview: (entry: LedgerEntry, kind: ReviewKind) => void
+  onRequestReview: (entry: LedgerEntry) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
   onRecordPayment: (entry: LedgerEntry) => void
   onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
@@ -2908,7 +2819,7 @@ function TallyBackApp() {
   const [addDuePerson, setAddDuePerson] = useState<Person | null>(null)
   const [editEntryTarget, setEditEntryTarget] = useState<LedgerEntry | null>(null)
   const [importingContacts, setImportingContacts] = useState(false)
-  const [reviewIntent, setReviewIntent] = useState<{ entry: LedgerEntry; kind: ReviewKind } | null>(null)
+  const [reviewIntent, setReviewIntent] = useState<LedgerEntry | null>(null)
   const [reviewRecords, setReviewRecords] = useState<LedgerReviewRecord[]>([])
   const [repaymentIntent, setRepaymentIntent] = useState<{ entry: LedgerEntry; mode: 'request' | 'record' } | null>(null)
   const [repaymentRequests, setRepaymentRequests] = useState<RepaymentRequest[]>([])
@@ -3460,7 +3371,7 @@ function TallyBackApp() {
 
     setEntries((current) => current.filter((item) => item.id !== entry.id))
     setDeleteEntryTarget(null)
-    if (reviewIntent?.entry.id === entry.id) setReviewIntent(null)
+    if (reviewIntent?.id === entry.id) setReviewIntent(null)
     setToast('Due deleted from both ledgers.')
   }
 
@@ -4022,7 +3933,7 @@ function TallyBackApp() {
           setSelectedPhone(null)
           setView('splits')
         }}
-        onRequestReview={(entry, kind) => setReviewIntent({ entry, kind })}
+        onRequestReview={setReviewIntent}
         onResolveReview={resolveReview}
         onRecordPayment={(entry) => setRepaymentIntent({
           entry,
@@ -4033,10 +3944,9 @@ function TallyBackApp() {
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
       {editEntryTarget ? <AddEntryModal currentUser={currentUser} contact={editEntryTarget.borrower} entry={editEntryTarget} onClose={() => setEditEntryTarget(null)} onSave={updateEntry} /> : null}
       {reviewIntent ? <ReviewRequestModal
-        entry={reviewIntent.entry}
-        initialKind={reviewIntent.kind}
+        entry={reviewIntent}
         onClose={() => setReviewIntent(null)}
-        onSend={(draft) => sendReviewRequest(reviewIntent.entry, draft)}
+        onSend={(draft) => sendReviewRequest(reviewIntent, draft)}
       /> : null}
       {repaymentIntent ? <RepaymentModal
         entry={repaymentIntent.entry}

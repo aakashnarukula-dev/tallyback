@@ -594,12 +594,6 @@ textarea:focus-visible {
   box-shadow: 0 -10px 24px rgba(39, 62, 57, 0.05);
 }
 
-.review-reason-picker button {
-  border-color: var(--line);
-  background: var(--paper);
-}
-
-.review-reason-picker button.active,
 .delete-warning-icon {
   border-color: #ecc7b8;
   background: var(--coral-soft);
@@ -1679,79 +1673,8 @@ body:has(.ledger-view-shell) #root {
   color: #2f7568;
 }
 
-.payer-actions .proof-claim {
-  background: #e9e8f6;
-  color: #5e61b9;
-}
-
 .payer-actions .report {
   margin-left: auto;
-  background: var(--coral-soft);
-  color: #a84d3d;
-}
-
-.review-proof-upload {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 13px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #f6faf8;
-}
-
-.review-proof-upload > div:first-child {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.review-proof-upload strong {
-  color: var(--ink);
-  font-size: 11px;
-}
-
-.review-proof-upload span {
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.review-proof-files {
-  grid-column: 1 / -1;
-  display: grid;
-  gap: 6px;
-}
-
-.review-proof-files > div {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 9px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-}
-
-.review-proof-files > div > span {
-  overflow: hidden;
-  color: var(--ink);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.review-proof-files button {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
   background: var(--coral-soft);
   color: #a84d3d;
 }
@@ -1886,51 +1809,6 @@ body:has(.ledger-view-shell) #root {
   font-size: 9px;
 }
 
-.review-modal .review-reason-picker {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
-  margin: 12px 0 0;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #eef4f2;
-}
-
-.review-modal .review-reason-picker button,
-.review-modal .review-reason-picker button.active {
-  min-height: 42px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 11px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--muted);
-  text-align: left;
-}
-
-.review-modal .review-reason-picker button.active {
-  background: var(--paper);
-  box-shadow: 0 2px 8px rgba(31, 54, 49, 0.08);
-  color: var(--indigo);
-}
-
-.review-modal .review-reason-picker button strong {
-  color: inherit;
-  font-size: 10px;
-}
-
-.review-choice-help {
-  margin: 8px 2px 0 34px;
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.45;
-}
-
 .review-response-section {
   margin-top: 18px;
   padding-top: 18px;
@@ -1941,34 +1819,12 @@ body:has(.ledger-view-shell) #root {
   margin-top: 14px;
 }
 
-.review-response-section .review-proof-upload {
-  margin-top: 14px;
-  padding: 14px;
-  border: 1px dashed #abc7c0;
-  border-radius: 12px;
-  background: #f8fbfa;
-}
-
 .review-response-section .review-field {
   margin-top: 14px;
 }
 
 .review-modal .modal-actions {
   margin-top: 18px;
-}
-
-@media (max-width: 560px) {
-  .review-modal .review-reason-picker {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .review-modal .review-reason-picker button {
-    padding-inline: 9px;
-  }
-
-  .review-choice-help {
-    margin-left: 0;
-  }
 }
 
 /* Keep the mobile sign-in experience inside the visible browser viewport. */

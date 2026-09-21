@@ -1012,12 +1012,6 @@ label,
   border-radius: 22px 22px 0 0;
 }
 
-.review-reason-picker button.active {
-  border-color: var(--studio-jade);
-  background: var(--studio-jade-soft);
-  color: var(--studio-jade);
-}
-
 .toast {
   bottom: 24px;
   padding: 11px 14px;

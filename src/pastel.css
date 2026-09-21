@@ -808,18 +808,6 @@ textarea:focus-visible {
   background: #f7f5fa;
 }
 
-.review-reason-picker button {
-  border-color: #e1ddec;
-  border-radius: 14px;
-  background: #fffefd;
-}
-
-.review-reason-picker button.active {
-  border-color: #e9c1c2;
-  background: #fae5e4;
-  color: #b4565f;
-}
-
 .delete-warning-icon {
   background: #fae5e4;
   color: #b4565f;

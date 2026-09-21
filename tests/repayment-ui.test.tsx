@@ -120,6 +120,32 @@ describe('record payment sheet', () => {
 })
 
 describe('compact due card', () => {
+  it('uses one borrower payment action for full or partial payments', async () => {
+    const user = userEvent.setup()
+    render(
+      <OpenDueCard
+        entry={entry}
+        direction="payable"
+        repayments={[]}
+        reviews={[]}
+        resolvingReviewId={null}
+        resolvingRepaymentId={null}
+        onEditDue={vi.fn()}
+        onDeleteDue={vi.fn()}
+        onOpenSplit={vi.fn()}
+        onRequestReview={vi.fn()}
+        onResolveReview={vi.fn()}
+        onRecordPayment={vi.fn()}
+        onResolveRepayment={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /Movie/ }))
+    expect(screen.getAllByRole('button', { name: 'Record payment' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Already paid' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Report issue' })).toBeTruthy()
+  })
+
   it('mounts history only after due expands and labels lender records correctly', async () => {
     const user = userEvent.setup()
     render(
