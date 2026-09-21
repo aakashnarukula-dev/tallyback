@@ -808,6 +808,22 @@
   margin-bottom: 8px;
 }
 
+.drawer-empty-ledger.receivable-empty {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.drawer-empty-ledger.receivable-empty .drawer-empty-add {
+  width: 100%;
+  min-height: 44px;
+}
+
+.mobile-nav.splits-disabled {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .drawer-entry-list {
   gap: 7px;
 }

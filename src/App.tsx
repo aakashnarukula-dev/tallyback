@@ -114,6 +114,8 @@ import {
 type Direction = 'receivable' | 'payable'
 type View = 'ledger' | 'activity' | 'splits'
 
+const SPLITS_ENABLED = false
+
 type ContactSummary = {
   person: Person
   total: number
@@ -2576,7 +2578,7 @@ export function OpenDueCard({
                 <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><Banknote size={16} /> Record payment</button>
               ) : null}
               {splitReference
-                ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
+                ? SPLITS_ENABLED ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button> : null
                 : <>
                     {!review && !pendingRepayments.length ? <button className="entry-edit-action" type="button" onClick={() => onEditDue(entry)} aria-label={`Edit ${entry.occasion} due`}><Pencil size={15} /> Edit</button> : null}
                     {!hasHistory ? <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button> : null}
@@ -2764,14 +2766,18 @@ function PersonDrawer({
             <span>{summary.openCount}</span>
           </div>
           {!summary.openCount ? (
-            <div className="drawer-empty-ledger">
-              <ReceiptText size={21} />
+            <div className={`drawer-empty-ledger ${direction === 'receivable' ? 'receivable-empty' : ''}`}>
               {direction === 'receivable' ? (
                 <button className="drawer-quick-add drawer-empty-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
                   <Plus size={16} /> Add due
                 </button>
-              ) : <strong>No dues yet</strong>}
-              <span>{direction === 'receivable' ? `Add first due for ${firstName}.` : 'New dues assigned to you appear here.'}</span>
+              ) : (
+                <>
+                  <ReceiptText size={21} />
+                  <strong>No dues yet</strong>
+                  <span>New dues assigned to you appear here.</span>
+                </>
+              )}
             </div>
           ) : null}
           <div className="drawer-entry-list">
@@ -2806,8 +2812,11 @@ function PersonDrawer({
                 onClick={() => setPaidExpanded((open) => !open)}
               >
                 <div>
-                  <h3 id="paid-dues-title">Paid</h3>
-                  <p>Completed payments with {firstName}</p>
+                  <h3 id="paid-dues-title">
+                    {direction === 'receivable'
+                      ? `Payments already received from ${firstName}`
+                      : `Payments already sent to ${firstName}`}
+                  </h3>
                 </div>
                 <span>{paidDueEntries.length}</span>
                 <ChevronDown className={paidExpanded ? 'expanded' : ''} size={17} aria-hidden="true" />
@@ -3679,9 +3688,11 @@ function TallyBackApp() {
           <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}>
             <ReceiptText size={19} /> Dues
           </button>
-          <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}>
-            <Split size={19} /> Splits
-          </button>
+          {SPLITS_ENABLED ? (
+            <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}>
+              <Split size={19} /> Splits
+            </button>
+          ) : null}
           <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}>
             <History size={19} /> Activity
           </button>
@@ -3971,9 +3982,9 @@ function TallyBackApp() {
         </div>
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">
+      <nav className={`mobile-nav ${SPLITS_ENABLED ? '' : 'splits-disabled'}`} aria-label="Mobile navigation">
         <button className={view === 'ledger' ? 'active' : ''} onClick={() => setView('ledger')}><ReceiptText size={20} /><span>Dues</span></button>
-        <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}><Split size={20} /><span>Splits</span></button>
+        {SPLITS_ENABLED ? <button className={view === 'splits' ? 'active' : ''} onClick={() => setView('splits')}><Split size={20} /><span>Splits</span></button> : null}
         <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}><History size={20} /><span>Activity</span></button>
       </nav>
 
@@ -3992,6 +4003,7 @@ function TallyBackApp() {
         onDeleteContact={setDeleteContactTarget}
         onDeleteDue={setDeleteEntryTarget}
         onOpenSplit={() => {
+          if (!SPLITS_ENABLED) return
           setSelectedPhone(null)
           setView('splits')
         }}
