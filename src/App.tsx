@@ -3747,11 +3747,11 @@ function TallyBackApp() {
                 <div className="balance-switch people-balance-switch" role="tablist" aria-label="Choose ledger side">
                   <button role="tab" aria-selected={direction === 'receivable'} className={`receive ${direction === 'receivable' ? 'active' : ''}`} onClick={() => setDirection('receivable')}>
                     <span className="switch-icon"><ArrowDownLeft size={19} /></span>
-                    <span><small>To receive</small><strong>{money.format(ledgerTotals.receivable)}</strong></span>
+                    <span><small>People who owe you</small><strong>{money.format(ledgerTotals.receivable)}</strong></span>
                   </button>
                   <button role="tab" aria-selected={direction === 'payable'} className={`pay ${direction === 'payable' ? 'active' : ''}`} onClick={() => setDirection('payable')}>
                     <span className="switch-icon"><ArrowUpRight size={19} /></span>
-                    <span><small>To pay</small><strong>{money.format(ledgerTotals.payable)}</strong></span>
+                    <span><small>People you owe</small><strong>{money.format(ledgerTotals.payable)}</strong></span>
                   </button>
                 </div>
 
