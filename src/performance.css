@@ -808,6 +808,11 @@
   margin-bottom: 8px;
 }
 
+.drawer-section-title.receivable-empty-title {
+  width: 90%;
+  margin-inline: auto;
+}
+
 .drawer-empty-ledger.receivable-empty {
   min-height: 0;
   padding: 0;

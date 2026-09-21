@@ -2759,7 +2759,7 @@ function PersonDrawer({
           ) : <span className="drawer-topbar-spacer" aria-hidden="true" />}
         </header>
         <div className="drawer-entries">
-          <div className="drawer-section-title">
+          <div className={`drawer-section-title ${!summary.openCount && direction === 'receivable' ? 'receivable-empty-title' : ''}`}>
             <div>
               <h3>{direction === 'receivable' ? `Payments expected from ${firstName}` : `Payments expected by ${firstName}`}</h3>
             </div>
