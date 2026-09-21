@@ -110,6 +110,7 @@ import {
   isPaidEntry,
   outstandingTotals,
 } from './ledger-calculations'
+import { money } from './currency'
 
 type Direction = 'receivable' | 'payable'
 type View = 'ledger' | 'activity' | 'splits'
@@ -189,6 +190,28 @@ export function useBrowserBackDismiss(onDismiss: () => void) {
   }, [layerId])
 }
 
+export function useEscapeDismiss(onDismiss: () => void, disabled = false) {
+  const onDismissRef = useRef(onDismiss)
+  const disabledRef = useRef(disabled)
+
+  onDismissRef.current = onDismiss
+  disabledRef.current = disabled
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (!disabledRef.current) onDismissRef.current()
+    }
+
+    // Document capture runs before lower-sheet bubble handlers, but after
+    // window-capture overlays such as DatePicker. Escape closes top layer only.
+    document.addEventListener('keydown', closeOnEscape, true)
+    return () => document.removeEventListener('keydown', closeOnEscape, true)
+  }, [])
+}
+
 function timestampMillis(value: unknown) {
   if (value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
     return (value as { toMillis: () => number }).toMillis()
@@ -197,12 +220,6 @@ function timestampMillis(value: unknown) {
   const parsed = Date.parse(String(value ?? ''))
   return Number.isFinite(parsed) ? parsed : 0
 }
-
-const money = new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: 'INR',
-  maximumFractionDigits: 0,
-})
 
 const shortDate = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric',
@@ -934,6 +951,7 @@ function AddPersonModal({
   }
 
   useBrowserBackDismiss(() => closeSheet())
+  useEscapeDismiss(() => closeSheet(), working)
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || closingRef.current || workingRef.current) return
@@ -969,14 +987,8 @@ function AddPersonModal({
     document.body.style.overflow = 'hidden'
     sheetRef.current?.focus()
 
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeSheet()
-    }
-    window.addEventListener('keydown', closeOnEscape)
-
     return () => {
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeOnEscape)
       if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
     }
   }, [])
@@ -1122,6 +1134,7 @@ function AddEntryModal({
   }
 
   useBrowserBackDismiss(() => closeSheet())
+  useEscapeDismiss(() => closeSheet(), saving)
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || closingRef.current || savingRef.current) return
@@ -1157,19 +1170,14 @@ function AddEntryModal({
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
 
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeSheet()
-    }
     const moveSheet = (event: PointerEvent) => moveDrag(event.clientY)
     const finishSheetDrag = () => finishDrag()
-    window.addEventListener('keydown', closeOnEscape)
     window.addEventListener('pointermove', moveSheet)
     window.addEventListener('pointerup', finishSheetDrag)
     window.addEventListener('pointercancel', finishSheetDrag)
 
     return () => {
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeOnEscape)
       window.removeEventListener('pointermove', moveSheet)
       window.removeEventListener('pointerup', finishSheetDrag)
       window.removeEventListener('pointercancel', finishSheetDrag)
@@ -1536,13 +1544,16 @@ function PaymentScreenshotGallery({
       setActiveScreenshot(null)
     }
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') closeActiveScreenshot()
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      closeActiveScreenshot()
     }
     window.addEventListener('popstate', closeOnHistoryBack)
-    window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('keydown', closeOnEscape, true)
     return () => {
       window.removeEventListener('popstate', closeOnHistoryBack)
-      window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('keydown', closeOnEscape, true)
       if (lightboxHistoryPushed.current && window.history.state?.tallyBackScreenshot) {
         lightboxHistoryPushed.current = false
         window.history.back()
@@ -1649,6 +1660,7 @@ export function RepaymentModal({
   }
 
   useBrowserBackDismiss(() => closeSheet())
+  useEscapeDismiss(() => closeSheet(), working)
 
   function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || closingRef.current || workingRef.current) return
@@ -1682,16 +1694,8 @@ export function RepaymentModal({
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      closeSheet()
-    }
-    window.addEventListener('keydown', closeOnEscape, true)
     return () => {
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeOnEscape, true)
       if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
       previewUrlsRef.current.clear()
@@ -1988,6 +1992,7 @@ function ReviewRequestModal({
   useBrowserBackDismiss(() => {
     if (!working) onClose()
   })
+  useEscapeDismiss(onClose, working)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -2043,7 +2048,7 @@ function ReviewRequestModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose() }}>
       <section
         className="modal-card review-modal"
         role="dialog"
@@ -2056,7 +2061,7 @@ function ReviewRequestModal({
             <p className="modal-kicker">Request a correction</p>
             <h2 id="review-request-title">What needs reviewing?</h2>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={working}>
             <X size={20} />
           </button>
         </div>
@@ -2122,7 +2127,7 @@ function ReviewRequestModal({
           </div>
           {error ? <p className="form-error">{error}</p> : null}
           <div className="modal-actions">
-            <button className="secondary-button" type="button" onClick={onClose}>Cancel</button>
+            <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Cancel</button>
             <button className="primary-button" type="submit" disabled={working}>{working ? 'Sending…' : 'Send for review'}</button>
           </div>
         </form>
@@ -2146,6 +2151,7 @@ function DeleteDueModal({
   useBrowserBackDismiss(() => {
     if (!working) onClose()
   })
+  useEscapeDismiss(onClose, working)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -2198,6 +2204,7 @@ function DeleteContactModal({
   useBrowserBackDismiss(() => {
     if (!working) onClose()
   })
+  useEscapeDismiss(onClose, working)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -3126,26 +3133,16 @@ function TallyBackApp() {
     const closeOutsideProfile = (event: PointerEvent) => {
       if (!profileMenuRef.current?.contains(event.target as Node)) setProfileOpen(false)
     }
-    document.addEventListener('pointerdown', closeOutsideProfile)
-    return () => document.removeEventListener('pointerdown', closeOutsideProfile)
-  }, [profileOpen])
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowAddPerson(false)
-        setAddDuePerson(null)
-        setEditEntryTarget(null)
-        setReviewIntent(null)
-        setRepaymentIntent(null)
-        setDeleteEntryTarget(null)
-        setDeleteContactTarget(null)
-        setProfileOpen(false)
-      }
+    const closeProfileOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProfileOpen(false)
     }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [])
+    document.addEventListener('pointerdown', closeOutsideProfile)
+    window.addEventListener('keydown', closeProfileOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutsideProfile)
+      window.removeEventListener('keydown', closeProfileOnEscape)
+    }
+  }, [profileOpen])
 
   const userPhone = normalizePhone(currentUser?.phone ?? '')
   const ledgerTotals = useMemo(() => outstandingTotals(entries, userPhone), [entries, userPhone])

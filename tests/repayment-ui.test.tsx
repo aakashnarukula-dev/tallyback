@@ -159,6 +159,20 @@ describe('record payment sheet', () => {
     await user.click(screen.getByRole('button', { name: selectedLabel }))
     expect(screen.getByRole('button', { name: tomorrowLabel }).hasAttribute('disabled')).toBe(true)
   })
+
+  it('closes only the date picker when Escape is pressed', async () => {
+    vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const user = userEvent.setup()
+    render(<RepaymentModal entry={entry} mode="record" onClose={vi.fn()} onSend={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: new Date().toLocaleDateString('en-GB') }))
+    expect(screen.getByRole('dialog', { name: 'Choose date' })).toBeTruthy()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'Choose date' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Record payment' })).toBeTruthy()
+  })
 })
 
 describe('compact due card', () => {

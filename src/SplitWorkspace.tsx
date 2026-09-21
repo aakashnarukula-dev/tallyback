@@ -11,6 +11,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Person } from './data'
+import { money } from './currency'
 import {
   markSplitRecipientPaid,
   newRecipient,
@@ -22,12 +23,6 @@ import {
   subscribeSplitContacts,
 } from './firebase-splits'
 import { auth } from './firebase'
-
-const money = new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: 'INR',
-  maximumFractionDigits: 0,
-})
 
 const blankDraft = (): SplitDraft => ({
   title: '',

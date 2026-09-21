@@ -1,18 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, LoaderCircle, Share2, ShieldCheck, UsersRound } from 'lucide-react'
 import { SplitPage, SplitRecipient, subscribePublicSplit } from './firebase-splits'
+import { money } from './currency'
 
 declare global {
   interface Window {
     Razorpay?: new (options: Record<string, unknown>) => { open: () => void }
   }
 }
-
-const money = new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: 'INR',
-  maximumFractionDigits: 0,
-})
 
 const apiBase = String(import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
 

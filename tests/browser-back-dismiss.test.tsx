@@ -1,11 +1,16 @@
 import { StrictMode } from 'react'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useBrowserBackDismiss } from '../src/App'
+import { useBrowserBackDismiss, useEscapeDismiss } from '../src/App'
 
 function DismissLayer({ onDismiss }: { onDismiss: () => void }) {
   useBrowserBackDismiss(onDismiss)
   return <div>Open layer</div>
+}
+
+function EscapeLayer({ onDismiss, disabled = false }: { onDismiss: () => void; disabled?: boolean }) {
+  useEscapeDismiss(onDismiss, disabled)
+  return <div>Open dialog</div>
 }
 
 afterEach(() => {
@@ -65,5 +70,25 @@ describe('browser Back dismissal', () => {
     await Promise.resolve()
 
     expect(goBack).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Escape dismissal', () => {
+  it('dismisses an idle dialog', () => {
+    const onDismiss = vi.fn()
+    render(<EscapeLayer onDismiss={onDismiss} />)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a working dialog open', () => {
+    const onDismiss = vi.fn()
+    render(<EscapeLayer onDismiss={onDismiss} disabled />)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(onDismiss).not.toHaveBeenCalled()
   })
 })
