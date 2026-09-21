@@ -751,8 +751,43 @@ service cloud.firestore {
         );
     }
 
+    function activityMatchesRepayment(data, expectedStatus) {
+      let repaymentPath = /databases/$(database)/documents/repaymentRequests/$(data.sourceId);
+      let repayment = getAfter(repaymentPath).data;
+      return existsAfter(repaymentPath)
+        && repayment.dueId == data.dueId
+        && repayment.status == expectedStatus
+        && repayment.amount == data.amount
+        && repayment.method == data.method
+        && repayment.paidAt == data.eventDate
+        && repayment.note == data.note
+        && (
+          (expectedStatus == 'pending' && repayment.createdAt == request.time)
+          || (expectedStatus in ['accepted', 'rejected'] && repayment.reviewedAt == request.time)
+        );
+    }
+
+    function activityMatchesReview(data, expectedStatus, expectedKind) {
+      let reviewPath = /databases/$(database)/documents/ledgerReviews/$(data.sourceId);
+      let review = getAfter(reviewPath).data;
+      return existsAfter(reviewPath)
+        && review.entryId == data.dueId
+        && review.status == expectedStatus
+        && review.kind == expectedKind
+        && (expectedKind == 'paid' || review.proposedAmount == data.amount)
+        && review.proposedMethod == data.method
+        && review.proposedDate == data.eventDate
+        && review.note == data.note
+        && (
+          (expectedStatus == 'pending' && review.createdAt == request.time)
+          || (expectedStatus in ['approved', 'rejected'] && review.resolvedAt == request.time)
+        );
+    }
+
     function validActivity(data) {
-      let entry = getAfter(/databases/$(database)/documents/ledgerEntries/$(data.dueId)).data;
+      let entryPath = /databases/$(database)/documents/ledgerEntries/$(data.dueId);
+      let entryBefore = get(entryPath).data;
+      let entry = getAfter(entryPath).data;
       return data.keys().hasAll([
           'dueId',
           'sourceId',
@@ -812,6 +847,7 @@ service cloud.firestore {
         && data.note.size() <= 280
         && data.status in ['open', 'partially_paid', 'paid', 'pending', 'accepted', 'rejected']
         && data.occurredAt == request.time
+        && entry.updatedAt == request.time
         && (
           (
             data.type in [
@@ -842,6 +878,80 @@ service cloud.firestore {
                 /databases/$(database)/documents/users/$(request.auth.uid)
               ).data.name
             )
+          )
+        )
+        && (
+          (
+            data.type == 'due_created'
+            && !exists(entryPath)
+            && entry.createdAt == request.time
+            && data.sourceId == data.dueId
+            && data.amount == originalAmount(entry)
+            && data.eventDate == entry.date
+            && data.method == entry.method
+            && data.status == expectedStatus(entry)
+          )
+          || (
+            data.type == 'due_edited'
+            && exists(entryPath)
+            && data.sourceId == data.dueId
+            && data.amount == originalAmount(entry)
+            && data.eventDate == entry.date
+            && data.method == entry.method
+            && data.status == expectedStatus(entry)
+          )
+          || (
+            data.type == 'repayment_submitted'
+            && data.status == 'pending'
+            && (
+              activityMatchesRepayment(data, 'pending')
+              || activityMatchesReview(data, 'pending', 'paid')
+            )
+          )
+          || (
+            data.type == 'mistake_reported'
+            && data.status == 'pending'
+            && activityMatchesReview(data, 'pending', 'amount')
+          )
+          || (
+            data.type == 'repayment_accepted'
+            && data.status == 'accepted'
+            && (
+              activityMatchesRepayment(data, 'accepted')
+              || activityMatchesReview(data, 'approved', 'paid')
+            )
+          )
+          || (
+            data.type == 'repayment_rejected'
+            && data.status == 'rejected'
+            && (
+              activityMatchesRepayment(data, 'rejected')
+              || activityMatchesReview(data, 'rejected', 'paid')
+            )
+          )
+          || (
+            data.type == 'payment_recorded'
+            && data.status == 'accepted'
+            && activityMatchesRepayment(data, 'accepted')
+            && getAfter(
+              /databases/$(database)/documents/repaymentRequests/$(data.sourceId)
+            ).data.recordedBy == 'lender'
+          )
+          || (
+            data.type == 'correction_accepted'
+            && data.status == 'accepted'
+            && activityMatchesReview(data, 'approved', 'amount')
+          )
+          || (
+            data.type == 'correction_rejected'
+            && data.status == 'rejected'
+            && activityMatchesReview(data, 'rejected', 'amount')
+          )
+          || (
+            data.type == 'due_marked_paid'
+            && entryBefore.status in ['open', 'partially_paid']
+            && entry.status == 'paid'
+            && data.status == 'paid'
           )
         );
     }

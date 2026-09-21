@@ -21,6 +21,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import {
+  deleteObject,
   getMetadata,
   ref as storageRef,
   uploadString,
@@ -406,6 +407,8 @@ try {
     sourceId: reviewId,
     lender,
     borrower,
+    eventDate: '2026-09-20',
+    note: 'Paid in full',
   })
   await assertSucceeds(submitReview.commit())
 
@@ -431,6 +434,8 @@ try {
     sourceId: reviewId,
     lender,
     borrower,
+    eventDate: '2026-09-20',
+    note: 'Paid in full',
   })
   approveReview.set(doc(lenderDatabase, 'ledgerActivities', 'already-paid-completed'), {
     ...activity('due_marked_paid', lenderUid, lenderPhone, lender.name, 'paid', 500),
@@ -470,6 +475,12 @@ try {
       historyStarted: true,
       updatedAt: serverTimestamp(),
     })
+    transaction.set(doc(borrowerDatabase, 'ledgerActivities', `${requestId}-submitted`), {
+      ...activity('repayment_submitted', borrowerUid, borrowerPhone, borrower.name, 'pending', amount),
+      dueId: targetDueId,
+      sourceId: requestId,
+      note: 'Paid offline',
+    })
   })
 
   await assertSucceeds(submitRepayment('payment-400', 400))
@@ -500,6 +511,11 @@ try {
       pendingRepaymentId: deleteField(),
       historyStarted: true,
       updatedAt: serverTimestamp(),
+    })
+    transaction.set(doc(lenderDatabase, 'ledgerActivities', 'payment-400-accepted'), {
+      ...activity('repayment_accepted', lenderUid, lenderPhone, lender.name, 'accepted', 400),
+      sourceId: 'payment-400',
+      note: 'Paid offline',
     })
   }))
 
@@ -566,7 +582,7 @@ try {
   }))
   await assertFails(deleteDoc(doc(lenderDatabase, 'ledgerEntries', 'rejection-due')))
 
-  await assertSucceeds(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-submitted'), activity(
+  await assertFails(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-submitted'), activity(
     'repayment_submitted',
     borrowerUid,
     borrowerPhone,
@@ -590,7 +606,7 @@ try {
     'pending',
     400,
   )))
-  await assertSucceeds(setDoc(doc(lenderDatabase, 'ledgerActivities', 'lender-accepted'), activity(
+  await assertFails(setDoc(doc(lenderDatabase, 'ledgerActivities', 'lender-accepted'), activity(
     'repayment_accepted',
     lenderUid,
     lenderPhone,
@@ -619,7 +635,7 @@ try {
     name: 'Borrower Updated',
     updatedAt: serverTimestamp(),
   }))
-  await assertSucceeds(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-renamed'), activity(
+  await assertFails(setDoc(doc(borrowerDatabase, 'ledgerActivities', 'borrower-renamed'), activity(
     'repayment_submitted',
     borrowerUid,
     borrowerPhone,
@@ -702,6 +718,7 @@ try {
       borrowerPhone: offlineBorrowerPhone,
       participantPhones: [lenderPhone, offlineBorrowerPhone],
       method: 'Cash',
+      note: 'Received offline',
     })
   }))
 
@@ -801,6 +818,7 @@ try {
     .authenticatedContext(lenderUid, { phone_number: lenderPhone })
     .storage('gs://demo-tallyback.firebasestorage.app')
   await assertSucceeds(getMetadata(storageRef(lenderStorage, proofPath)))
+  await assertFails(deleteObject(storageRef(borrowerStorage, proofPath)))
   const strangerStorage = testEnvironment
     .authenticatedContext('stranger', { phone_number: strangerPhone })
     .storage('gs://demo-tallyback.firebasestorage.app')
@@ -824,8 +842,9 @@ try {
     .storage('gs://demo-tallyback.firebasestorage.app')
   await assertSucceeds(getMetadata(storageRef(offlineBorrowerStorage, lenderProofPath)))
   await assertFails(getMetadata(storageRef(strangerStorage, lenderProofPath)))
+  await assertSucceeds(deleteObject(storageRef(lenderStorage, lenderProofPath)))
 
-  console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, activity visibility, immutable identities, and private proof access passed.')
+  console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, source-bound activity, immutable proof, immutable identities, and private proof access passed.')
 } finally {
   await testEnvironment.cleanup()
 }

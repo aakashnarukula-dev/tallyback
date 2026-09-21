@@ -96,6 +96,25 @@ describe('record payment sheet', () => {
     expect(screen.getByRole('alert').textContent).toContain('two decimal places')
     expect(onSend).not.toHaveBeenCalled()
   })
+
+  it('prevents choosing a future payment date', async () => {
+    vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const user = userEvent.setup()
+    render(<RepaymentModal entry={entry} mode="record" onClose={vi.fn()} onSend={vi.fn()} />)
+
+    const now = new Date()
+    const selectedLabel = now.toLocaleDateString('en-GB')
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    const tomorrowLabel = new Intl.DateTimeFormat('en-IN', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(tomorrow)
+
+    await user.click(screen.getByRole('button', { name: selectedLabel }))
+    expect(screen.getByRole('button', { name: tomorrowLabel }).hasAttribute('disabled')).toBe(true)
+  })
 })
 
 describe('compact due card', () => {

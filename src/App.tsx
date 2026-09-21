@@ -1,4 +1,4 @@
-import { type CSSProperties, ChangeEvent, FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, ChangeEvent, FormEvent, lazy, Suspense, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ConfirmationResult,
@@ -102,8 +102,6 @@ import {
   signInWithTruecaller,
   TruecallerInit,
 } from './truecaller'
-import SplitPublicPage from './SplitPublicPage'
-import SplitWorkspace from './SplitWorkspace'
 import {
   canonicalEntryStatus,
   entryOriginalAmount,
@@ -121,8 +119,12 @@ type ContactSummary = {
   person: Person
   total: number
   openCount: number
+  pendingCount: number
   entries: LedgerEntry[]
 }
+
+const SplitPublicPage = lazy(() => import('./SplitPublicPage'))
+const SplitWorkspace = lazy(() => import('./SplitWorkspace'))
 
 type ReviewSubmissionDraft = Omit<ReviewDraft, 'proofScreenshots'> & {
   proofFiles: File[]
@@ -263,7 +265,7 @@ function calendarDateValue(value: Date) {
   return `${year}-${month}-${day}`
 }
 
-function DatePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function DatePicker({ value, onChange, max }: { value: string; onChange: (value: string) => void; max?: string }) {
   const selectedDate = parseCalendarDate(value)
   const [open, setOpen] = useState(false)
   const [visibleMonth, setVisibleMonth] = useState(
@@ -303,9 +305,13 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
   }
 
   function chooseDate(day: Date) {
-    onChange(calendarDateValue(day))
+    const nextValue = calendarDateValue(day)
+    if (max && nextValue > max) return
+    onChange(nextValue)
     closePicker()
   }
+
+  const nextMonthValue = calendarDateValue(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))
 
   return (
     <>
@@ -343,6 +349,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
                 <button
                   type="button"
                   aria-label="Next month"
+                  disabled={Boolean(max && nextMonthValue > max)}
                   onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}
                 ><ChevronRight size={18} /></button>
               </div>
@@ -361,6 +368,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
                     className={`${outsideMonth ? 'outside' : ''} ${dayValue === value ? 'selected' : ''} ${dayValue === todayValue ? 'today' : ''}`}
                     aria-label={calendarDayLabel.format(day)}
                     aria-pressed={dayValue === value}
+                    disabled={Boolean(max && dayValue > max)}
                     onClick={() => chooseDate(day)}
                   >{day.getDate()}</button>
                 )
@@ -1784,6 +1792,10 @@ export function RepaymentModal({
       setError('Choose payment date.')
       return
     }
+    if (date > today()) {
+      setError('Payment date cannot be in the future.')
+      return
+    }
     if (mode === 'request' && !proofFiles.length) {
       setError('Add at least one payment-proof screenshot.')
       return
@@ -1868,7 +1880,7 @@ export function RepaymentModal({
             </label>
             <div className="form-field">
               <span>Payment date</span>
-              <DatePicker value={date} onChange={setDate} />
+              <DatePicker value={date} onChange={setDate} max={today()} />
             </div>
             <label>
               Payment method
@@ -3128,7 +3140,7 @@ function TallyBackApp() {
 
   useEffect(() => {
     if (!toast) return
-    const timer = window.setTimeout(() => setToast(''), 1000)
+    const timer = window.setTimeout(() => setToast(''), 3200)
     return () => window.clearTimeout(timer)
   }, [toast])
 
@@ -3226,6 +3238,7 @@ function TallyBackApp() {
           person: contact,
           total: 0,
           openCount: 0,
+          pendingCount: 0,
           entries: [],
         })
       })
@@ -3239,9 +3252,12 @@ function TallyBackApp() {
         person: displayPerson,
         total: 0,
         openCount: 0,
+        pendingCount: 0,
         entries: [],
       }
       existing.entries.push(entry)
+      if (pendingReviews.has(entry.id)) existing.pendingCount += 1
+      existing.pendingCount += (repaymentsByDue.get(entry.id) ?? []).filter((request) => request.status === 'pending').length
       const remainingAmount = entryRemainingAmount(entry)
       if (remainingAmount > 0) {
         existing.total += remainingAmount
@@ -3256,7 +3272,7 @@ function TallyBackApp() {
           : summary.entries.length > 0
       ))
       .sort((a, b) => b.total - a.total || a.person.name.localeCompare(b.person.name))
-  }, [contacts, contactsByPhone, direction, relevantEntries, userPhone])
+  }, [contacts, contactsByPhone, direction, pendingReviews, relevantEntries, repaymentsByDue, userPhone])
 
   const summaries = useMemo(() => {
     const queryText = search.trim().toLowerCase()
@@ -3719,7 +3735,9 @@ function TallyBackApp() {
               disabled={!incomingReviewEntries.length && !incomingRepayments.length}
             >
               <Bell size={19} />
-              {incomingReviewEntries.length + incomingRepayments.length ? <span /> : null}
+              {incomingReviewEntries.length + incomingRepayments.length ? (
+                <span aria-hidden="true">{incomingReviewEntries.length + incomingRepayments.length > 9 ? '9+' : incomingReviewEntries.length + incomingRepayments.length}</span>
+              ) : null}
             </button>
             <div className="profile-wrap" ref={profileMenuRef}>
               <button
@@ -3810,7 +3828,12 @@ function TallyBackApp() {
                           </span>
                           <span className="contact-ledger-amount">
                             <strong className={direction === 'payable' ? 'amount-negative' : ''}>{summary.openCount ? money.format(summary.total) : 'No dues'}</strong>
-                            <small>{summary.openCount ? `${summary.openCount} open` : 'Ready when needed'}</small>
+                            <small className={summary.pendingCount ? 'has-pending' : ''}>
+                              {summary.openCount ? `${summary.openCount} open` : 'Ready when needed'}
+                              {summary.pendingCount
+                                ? ` · ${summary.pendingCount} ${direction === 'receivable' ? 'to review' : 'awaiting approval'}`
+                                : ''}
+                            </small>
                           </span>
                         </button>
                       </article>
@@ -3847,6 +3870,13 @@ function TallyBackApp() {
                   <button className={direction === 'payable' ? 'active' : ''} onClick={() => setDirection('payable')}>To pay</button>
                 </div>
                 <div className="activity-list">
+                  {!activityItems.length ? (
+                    <div className="activity-empty-state">
+                      <History size={22} />
+                      <strong>No activity yet</strong>
+                      <span>{direction === 'receivable' ? 'New dues and incoming payments appear here.' : 'Payments and review updates appear here.'}</span>
+                    </div>
+                  ) : null}
                   {activityItems.map((item) => {
                     if (item.kind === 'activity') {
                       const { activity } = item
@@ -3963,7 +3993,9 @@ function TallyBackApp() {
                 </div>
               </section>
             ) : (
-              <SplitWorkspace currentUser={currentUser} onNotice={setToast} />
+              <Suspense fallback={<div className="ledger-loading">Opening splits…</div>}>
+                <SplitWorkspace currentUser={currentUser} onNotice={setToast} />
+              </Suspense>
             )}
           </section>
 
@@ -4027,7 +4059,11 @@ function TallyBackApp() {
 
 function App() {
   const match = window.location.pathname.match(/^\/split\/([a-z0-9-]+)\/?$/i)
-  if (match) return <SplitPublicPage splitId={match[1]} />
+  if (match) return (
+    <Suspense fallback={<main className="split-public-state"><LoaderCircle className="spin" size={25} /><strong>Opening shared expense…</strong></main>}>
+      <SplitPublicPage splitId={match[1]} />
+    </Suspense>
+  )
   return <TallyBackApp />
 }
 

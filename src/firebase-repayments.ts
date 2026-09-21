@@ -36,6 +36,20 @@ function requireDatabase() {
 
 const phoneIdentity = (value: string) => `+91${value.replace(/\D/g, '').slice(-10)}`
 
+function currentLocalDate() {
+  const value = new Date()
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+function assertValidPaymentDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Choose a valid payment date.')
+  if (value > currentLocalDate()) throw new Error('Payment date cannot be in the future.')
+}
+
 export async function createRepaymentRequest(
   entry: LedgerEntry,
   borrowerId: string,
@@ -52,6 +66,7 @@ export async function createRepaymentRequest(
   if (!hasValidMoneyPrecision(draft.amount)) {
     throw new Error('Payment amount can have at most two decimal places.')
   }
+  assertValidPaymentDate(draft.paidAt)
   if (!draft.proofScreenshots.length) throw new Error('Add at least one payment-proof screenshot.')
   if (draft.proofScreenshots.length > 5) throw new Error('Add no more than five payment-proof screenshots.')
 
@@ -260,6 +275,7 @@ export async function recordLenderPayment(
   if (!hasValidMoneyPrecision(draft.amount)) {
     throw new Error('Payment amount can have at most two decimal places.')
   }
+  assertValidPaymentDate(draft.paidAt)
   if (draft.proofScreenshots.length > 5) throw new Error('Add no more than five payment-proof screenshots.')
 
   const database = requireDatabase()

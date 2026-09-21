@@ -13,7 +13,7 @@ import { activityDocument } from './firebase-activity'
 import { getSplitLedgerReference, LedgerEntry, LedgerReview, LedgerReviewRecord, PaymentMethod, PaymentScreenshot, ReviewKind } from './data'
 import { db } from './firebase'
 import { toE164 } from './firebase-ledger'
-import { entryOriginalAmount, entryPaidAmount } from './ledger-calculations'
+import { entryOriginalAmount, entryPaidAmount, entryRemainingAmount } from './ledger-calculations'
 
 export type ReviewDraft = {
   kind: ReviewKind
@@ -89,7 +89,7 @@ export async function createReviewRequest(entry: LedgerEntry, uid: string, draft
     draft.kind === 'paid' ? 'repayment_submitted' : 'mistake_reported',
     reviewRef.id,
     {
-      amount: draft.kind === 'paid' ? entryOriginalAmount(entry) : draft.proposedAmount,
+      amount: draft.kind === 'paid' ? entryRemainingAmount(entry) : draft.proposedAmount,
       eventDate: draft.proposedDate,
       method: draft.proposedMethod,
       note: draft.note,
@@ -241,7 +241,7 @@ export async function resolveReviewRequest(
       activityType,
       liveReview.reviewId ?? liveEntry.id,
       {
-        amount: liveReview.kind === 'amount' ? liveReview.proposedAmount : entryOriginalAmount(liveEntry),
+        amount: liveReview.kind === 'amount' ? liveReview.proposedAmount : entryRemainingAmount(liveEntry),
         eventDate: liveReview.proposedDate ?? liveEntry.date,
         method: liveReview.proposedMethod ?? liveEntry.method,
         note: liveReview.note,
@@ -262,7 +262,7 @@ export async function resolveReviewRequest(
         'due_marked_paid',
         liveReview.reviewId ?? liveEntry.id,
         {
-          amount: liveReview.kind === 'amount' ? liveReview.proposedAmount : entryOriginalAmount(liveEntry),
+          amount: liveReview.kind === 'amount' ? liveReview.proposedAmount : entryRemainingAmount(liveEntry),
           eventDate: liveReview.proposedDate ?? liveEntry.date,
           method: liveReview.proposedMethod ?? liveEntry.method,
           note: liveReview.note,

@@ -32,6 +32,19 @@ service firebase.storage {
         );
     }
 
+    function mayDeleteUnsubmittedUpload(entryId, uploaderUid) {
+      return request.auth != null
+        && request.auth.uid == uploaderUid
+        && (
+          !firestore.exists(
+            /databases/(default)/documents/ledgerEntries/$(entryId)
+          )
+          || firestore.get(
+            /databases/(default)/documents/ledgerEntries/$(entryId)
+          ).data.createdBy == request.auth.uid
+        );
+    }
+
     match /ledgerEntries/{entryId}/{uploaderUid}/{fileName} {
       // Upload ownership is tied to the authenticated Firebase UID. Phone
       // identity is enforced again when the ledger document is created.
@@ -54,7 +67,9 @@ service firebase.storage {
           'image/webp'
         ];
       allow read: if isEntryParticipant(entryId);
-      allow delete: if request.auth != null && request.auth.uid == uploaderUid;
+      // Borrower proof becomes immutable once attached to an existing due.
+      // This prevents payment evidence disappearing after submission or review.
+      allow delete: if mayDeleteUnsubmittedUpload(entryId, uploaderUid);
       allow update: if false;
     }
 

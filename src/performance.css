@@ -578,6 +578,68 @@
   color: var(--coral);
 }
 
+.notification-button > span {
+  top: -4px;
+  right: -4px;
+  width: auto;
+  min-width: 17px;
+  height: 17px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 4px;
+  border-width: 2px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.contact-ledger-amount small.has-pending {
+  color: #8a4e2e;
+  font-weight: 750;
+}
+
+.activity-empty-state {
+  min-height: 230px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 28px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.activity-empty-state > svg {
+  color: var(--sage);
+}
+
+.activity-empty-state strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.activity-empty-state span {
+  max-width: 34ch;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.date-picker-header button:disabled,
+.date-picker-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
+}
+
+.login-subtitle {
+  color: #625e70;
+}
+
+.phone-input > span {
+  color: #52645f;
+}
+
 @media (max-width: 600px) {
   .repayment-modal {
     width: 100%;
