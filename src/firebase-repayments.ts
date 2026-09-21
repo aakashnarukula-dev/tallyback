@@ -18,7 +18,7 @@ import {
 import { activityDocument } from './firebase-activity'
 import { db } from './firebase'
 import { getSplitLedgerReference } from './data'
-import { applyRepaymentDecision, entryRemainingAmount } from './ledger-calculations'
+import { applyApprovedPayment, applyRepaymentDecision, entryRemainingAmount } from './ledger-calculations'
 
 export type RepaymentDraft = {
   amount: number
@@ -218,4 +218,118 @@ export async function resolveRepaymentRequest(
       }
     }
   })
+}
+
+export async function recordLenderPayment(
+  entry: LedgerEntry,
+  lenderId: string,
+  lender: Person,
+  draft: RepaymentDraft,
+) {
+  if (!entry.createdBy) throw new Error('This due is missing its lender identity.')
+  if (entry.createdBy !== lenderId || phoneIdentity(lender.phone) !== phoneIdentity(entry.lender.phone)) {
+    throw new Error('Only lender can record payment on this due.')
+  }
+  if (!Number.isFinite(draft.amount) || draft.amount <= 0) {
+    throw new Error('Payment amount must be greater than zero.')
+  }
+  if (draft.proofScreenshots.length > 5) throw new Error('Add no more than five payment-proof screenshots.')
+
+  const database = requireDatabase()
+  const requestRef = doc(collection(database, 'repaymentRequests'))
+  const entryRef = doc(database, 'ledgerEntries', entry.id)
+  const acceptedActivityRef = doc(collection(database, 'ledgerActivities'))
+  const paidActivityRef = doc(collection(database, 'ledgerActivities'))
+
+  await runTransaction(database, async (transaction) => {
+    const entrySnapshot = await transaction.get(entryRef)
+    if (!entrySnapshot.exists()) throw new Error('This due no longer exists.')
+
+    const liveEntry = { id: entrySnapshot.id, ...entrySnapshot.data() } as LedgerEntry
+    if (liveEntry.createdBy !== lenderId || phoneIdentity(lender.phone) !== phoneIdentity(liveEntry.lender.phone)) {
+      throw new Error('Only lender can record payment on this due.')
+    }
+    const nextBalance = applyApprovedPayment(liveEntry, draft.amount)
+    const splitReference = nextBalance.status === 'paid' ? getSplitLedgerReference(liveEntry.id) : null
+    const pageRef = splitReference ? doc(database, 'splitPages', splitReference.splitId) : null
+    const pageSnapshot = pageRef ? await transaction.get(pageRef) : null
+    const recordedAt = new Date().toISOString()
+
+    const lenderPhone = phoneIdentity(liveEntry.lender.phone)
+    const borrowerPhone = phoneIdentity(liveEntry.borrower.phone)
+    transaction.set(requestRef, {
+      dueId: liveEntry.id,
+      lenderId,
+      lenderPhone,
+      borrowerPhone,
+      participantPhones: [lenderPhone, borrowerPhone],
+      payerName: liveEntry.borrower.name.trim().slice(0, 120),
+      amount: draft.amount,
+      method: draft.method,
+      paidAt: draft.paidAt,
+      proofScreenshots: draft.proofScreenshots,
+      note: draft.note.trim().slice(0, 280),
+      status: 'accepted',
+      recordedBy: 'lender',
+      createdAt: serverTimestamp(),
+      reviewedAt: serverTimestamp(),
+      reviewedBy: lenderId,
+    })
+    transaction.update(entryRef, {
+      ...nextBalance,
+      lastRepaymentId: requestRef.id,
+      ...(nextBalance.status === 'paid' ? { settledAt: recordedAt } : {}),
+      updatedAt: serverTimestamp(),
+    })
+
+    const acceptedActivity = activityDocument(
+      { ...liveEntry, ...nextBalance },
+      lenderId,
+      lender,
+      'payment_recorded',
+      requestRef.id,
+      {
+        amount: draft.amount,
+        eventDate: draft.paidAt,
+        method: draft.method,
+        note: draft.note,
+        status: 'accepted',
+      },
+    )
+    transaction.set(acceptedActivityRef, acceptedActivity.data)
+
+    if (nextBalance.status !== 'paid') return
+
+    const paidActivity = activityDocument(
+      { ...liveEntry, ...nextBalance },
+      lenderId,
+      lender,
+      'due_marked_paid',
+      requestRef.id,
+      {
+        amount: draft.amount,
+        eventDate: draft.paidAt,
+        method: draft.method,
+        note: draft.note,
+        status: 'paid',
+      },
+    )
+    transaction.set(paidActivityRef, paidActivity.data)
+
+    if (pageRef && pageSnapshot?.exists() && splitReference) {
+      const page = pageSnapshot.data() as {
+        ownerUid: string
+        recipients: Array<{ id: string; status: 'pending' | 'paid'; paidAt?: string }>
+      }
+      if (page.ownerUid !== lenderId) throw new Error('Only split owner can record this payment.')
+      transaction.update(pageRef, {
+        recipients: page.recipients.map((recipient) => recipient.id === splitReference.recipientId
+          ? { ...recipient, status: 'paid', paidAt: recordedAt }
+          : recipient),
+        updatedAt: serverTimestamp(),
+      })
+    }
+  })
+
+  return requestRef.id
 }

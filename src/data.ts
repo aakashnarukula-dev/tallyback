@@ -51,7 +51,7 @@ export type RepaymentRequest = {
   dueId: string
   lenderId: string
   lenderPhone: string
-  borrowerId: string
+  borrowerId?: string
   borrowerPhone: string
   participantPhones: string[]
   payerName: string
@@ -64,6 +64,7 @@ export type RepaymentRequest = {
   createdAt?: unknown
   reviewedAt?: unknown
   reviewedBy?: string
+  recordedBy?: 'lender'
 }
 
 export type LedgerActivityType =
@@ -72,6 +73,7 @@ export type LedgerActivityType =
   | 'repayment_submitted'
   | 'repayment_accepted'
   | 'repayment_rejected'
+  | 'payment_recorded'
   | 'mistake_reported'
   | 'correction_accepted'
   | 'correction_rejected'

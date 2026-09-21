@@ -31,10 +31,14 @@ const borrowerUid = 'borrower-9154195668'
 const lenderPhone = '+919177216132'
 const borrowerPhone = '+919154195668'
 const strangerPhone = '+919999999999'
+const offlineBorrowerPhone = '+919154195669'
 const dueId = 'partial-payment-due'
+const lenderDirectDueId = 'lender-direct-due'
+const decimalDueId = 'decimal-payment-due'
 
 const lender = { name: 'Aakash', phone: lenderPhone }
 const borrower = { name: 'Borrower', phone: borrowerPhone }
+const offlineBorrower = { name: 'Offline friend', phone: offlineBorrowerPhone }
 
 const screenshot = (requestId, name = 'proof.png') => ({
   path: `ledgerEntries/${dueId}/${borrowerUid}/${requestId}-${name}`,
@@ -157,6 +161,42 @@ try {
       createdAt: new Date(),
       updatedAt: new Date(),
     })
+    await setDoc(doc(database, 'ledgerEntries', lenderDirectDueId), {
+      lender,
+      borrower: offlineBorrower,
+      lenderPhone,
+      borrowerPhone: offlineBorrowerPhone,
+      participantPhones: [lenderPhone, offlineBorrowerPhone],
+      amount: 1000,
+      originalAmount: 1000,
+      paidAmount: 0,
+      remainingAmount: 1000,
+      occasion: 'Offline repayment',
+      method: 'Cash',
+      date: '2026-09-21',
+      status: 'open',
+      createdBy: lenderUid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await setDoc(doc(database, 'ledgerEntries', decimalDueId), {
+      lender,
+      borrower: offlineBorrower,
+      lenderPhone,
+      borrowerPhone: offlineBorrowerPhone,
+      participantPhones: [lenderPhone, offlineBorrowerPhone],
+      amount: 0.3,
+      originalAmount: 0.3,
+      paidAmount: 0.1,
+      remainingAmount: 0.2,
+      occasion: 'Decimal repayment',
+      method: 'Cash',
+      date: '2026-09-21',
+      status: 'partially_paid',
+      createdBy: lenderUid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
   })
 
   const lenderDatabase = testEnvironment
@@ -167,6 +207,9 @@ try {
     .firestore()
   const strangerDatabase = testEnvironment
     .authenticatedContext('stranger', { phone_number: strangerPhone })
+    .firestore()
+  const offlineBorrowerDatabase = testEnvironment
+    .authenticatedContext('offline-friend-after-signup', { phone_number: offlineBorrowerPhone })
     .firestore()
 
   await assertSucceeds(updateDoc(doc(lenderDatabase, 'users', lenderUid), {
@@ -537,6 +580,132 @@ try {
     updatedAt: serverTimestamp(),
   }))
 
+  const lenderRecordedPayment = (amount, proofScreenshots = []) => ({
+    dueId: lenderDirectDueId,
+    lenderId: lenderUid,
+    lenderPhone,
+    borrowerPhone: offlineBorrowerPhone,
+    participantPhones: [lenderPhone, offlineBorrowerPhone],
+    payerName: offlineBorrower.name,
+    amount,
+    method: 'Cash',
+    paidAt: '2026-09-21',
+    proofScreenshots,
+    note: 'Received offline',
+    status: 'accepted',
+    recordedBy: 'lender',
+    createdAt: serverTimestamp(),
+    reviewedAt: serverTimestamp(),
+    reviewedBy: lenderUid,
+  })
+
+  await assertFails(setDoc(
+    doc(lenderDatabase, 'repaymentRequests', 'direct-without-balance'),
+    lenderRecordedPayment(100),
+  ))
+
+  await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', lenderDirectDueId)
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'direct-400')
+    await transaction.get(entryRef)
+    transaction.set(requestRef, lenderRecordedPayment(400))
+    transaction.update(entryRef, {
+      originalAmount: 1000,
+      paidAmount: 400,
+      remainingAmount: 600,
+      status: 'partially_paid',
+      lastRepaymentId: 'direct-400',
+      updatedAt: serverTimestamp(),
+    })
+    transaction.set(doc(lenderDatabase, 'ledgerActivities', 'direct-400-recorded'), {
+      ...activity('payment_recorded', lenderUid, lenderPhone, lender.name, 'accepted', 400),
+      dueId: lenderDirectDueId,
+      sourceId: 'direct-400',
+      borrower: offlineBorrower,
+      borrowerPhone: offlineBorrowerPhone,
+      participantPhones: [lenderPhone, offlineBorrowerPhone],
+      method: 'Cash',
+    })
+  }))
+
+  const directPartialDue = await getDoc(doc(lenderDatabase, 'ledgerEntries', lenderDirectDueId))
+  if (directPartialDue.data().paidAmount !== 400 || directPartialDue.data().remainingAmount !== 600) {
+    throw new Error('Lender-recorded partial payment did not update exact balance.')
+  }
+  await assertSucceeds(getDoc(doc(offlineBorrowerDatabase, 'repaymentRequests', 'direct-400')))
+  await assertFails(getDoc(doc(strangerDatabase, 'repaymentRequests', 'direct-400')))
+  await assertFails(updateDoc(doc(lenderDatabase, 'repaymentRequests', 'direct-400'), { note: 'Changed later' }))
+
+  await assertFails(runTransaction(borrowerDatabase, async (transaction) => {
+    const entryRef = doc(borrowerDatabase, 'ledgerEntries', lenderDirectDueId)
+    const requestRef = doc(borrowerDatabase, 'repaymentRequests', 'borrower-spoofed-direct')
+    await transaction.get(entryRef)
+    transaction.set(requestRef, lenderRecordedPayment(100))
+    transaction.update(entryRef, {
+      originalAmount: 1000,
+      paidAmount: 500,
+      remainingAmount: 500,
+      status: 'partially_paid',
+      lastRepaymentId: 'borrower-spoofed-direct',
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
+  await assertFails(runTransaction(lenderDatabase, async (transaction) => {
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', lenderDirectDueId)
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'direct-overpayment')
+    await transaction.get(entryRef)
+    transaction.set(requestRef, lenderRecordedPayment(601))
+    transaction.update(entryRef, {
+      originalAmount: 1000,
+      paidAmount: 1001,
+      remainingAmount: -1,
+      status: 'partially_paid',
+      lastRepaymentId: 'direct-overpayment',
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
+  await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', lenderDirectDueId)
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'direct-600')
+    await transaction.get(entryRef)
+    transaction.set(requestRef, lenderRecordedPayment(600))
+    transaction.update(entryRef, {
+      originalAmount: 1000,
+      paidAmount: 1000,
+      remainingAmount: 0,
+      status: 'paid',
+      settledAt: new Date().toISOString(),
+      lastRepaymentId: 'direct-600',
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
+  const directPaidDue = await getDoc(doc(offlineBorrowerDatabase, 'ledgerEntries', lenderDirectDueId))
+  if (!directPaidDue.exists() || directPaidDue.data().status !== 'paid' || directPaidDue.data().remainingAmount !== 0) {
+    throw new Error('Lender-recorded full payment did not retain paid due.')
+  }
+
+  await assertSucceeds(runTransaction(lenderDatabase, async (transaction) => {
+    const entryRef = doc(lenderDatabase, 'ledgerEntries', decimalDueId)
+    const requestRef = doc(lenderDatabase, 'repaymentRequests', 'direct-decimal-020')
+    await transaction.get(entryRef)
+    transaction.set(requestRef, {
+      ...lenderRecordedPayment(0.2),
+      dueId: decimalDueId,
+    })
+    transaction.update(entryRef, {
+      originalAmount: 0.3,
+      paidAmount: 0.3,
+      remainingAmount: 0,
+      status: 'paid',
+      settledAt: new Date().toISOString(),
+      lastRepaymentId: 'direct-decimal-020',
+      updatedAt: serverTimestamp(),
+    })
+  }))
+
   const proofPath = `ledgerEntries/${dueId}/${borrowerUid}/storage-proof.png`
   const borrowerStorage = testEnvironment
     .authenticatedContext(borrowerUid, { phone_number: borrowerPhone })
@@ -562,7 +731,20 @@ try {
     { contentType: 'image/png' },
   ))
 
-  console.log('Firestore and Storage rules: borrower submission, lender-only review, partial balances, duplicate protection, retained paid dues, activity visibility, immutable identities, and private proof access passed.')
+  const lenderProofPath = `ledgerEntries/${lenderDirectDueId}/${lenderUid}/lender-proof.png`
+  await assertSucceeds(uploadString(
+    storageRef(lenderStorage, lenderProofPath),
+    'lender-payment-proof',
+    'raw',
+    { contentType: 'image/png' },
+  ))
+  const offlineBorrowerStorage = testEnvironment
+    .authenticatedContext('offline-friend-after-signup', { phone_number: offlineBorrowerPhone })
+    .storage('gs://demo-tallyback.firebasestorage.app')
+  await assertSucceeds(getMetadata(storageRef(offlineBorrowerStorage, lenderProofPath)))
+  await assertFails(getMetadata(storageRef(strangerStorage, lenderProofPath)))
+
+  console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, activity visibility, immutable identities, and private proof access passed.')
 } finally {
   await testEnvironment.cleanup()
 }

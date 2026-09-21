@@ -60,7 +60,6 @@ import {
   deleteEntry as deleteFirebaseEntry,
   getUserProfile,
   saveUserProfile,
-  settleEntry as settleFirebaseEntry,
   subscribeToEntries,
   syncParticipantName,
   toE164,
@@ -83,6 +82,7 @@ import {
 import { subscribeToActivities } from './firebase-activity'
 import {
   createRepaymentRequest,
+  recordLenderPayment,
   RepaymentDraft,
   resolveRepaymentRequest,
   subscribeToRepaymentRequests,
@@ -479,7 +479,7 @@ function actionableFirebaseError(error: unknown, fallback: string) {
     return 'Access expired. Sign in again, then retry.'
   }
   if (code === 'storage/unauthorized') return 'Payment proof access denied. Refresh this due and retry.'
-  if (code === 'permission-denied') return 'Payment request was denied. Refresh this due and confirm the signed-in number.'
+  if (code === 'permission-denied') return 'Payment update was denied. Refresh this due and confirm the signed-in account.'
   if (code === 'storage/retry-limit-exceeded' || code === 'unavailable') return 'Connection interrupted. Check internet and retry.'
   if (code === 'storage/quota-exceeded' || code === 'resource-exhausted') return 'Upload limit reached. Try again later.'
   return fallback
@@ -1589,12 +1589,14 @@ function PaymentScreenshotGallery({
   )
 }
 
-function RepaymentModal({
+export function RepaymentModal({
   entry,
+  mode,
   onClose,
   onSend,
 }: {
   entry: LedgerEntry
+  mode: 'request' | 'record'
   onClose: () => void
   onSend: (draft: RepaymentSubmissionDraft) => Promise<void>
 }) {
@@ -1773,7 +1775,7 @@ function RepaymentModal({
       setError('Choose payment date.')
       return
     }
-    if (!proofFiles.length) {
+    if (mode === 'request' && !proofFiles.length) {
       setError('Add at least one payment-proof screenshot.')
       return
     }
@@ -1790,7 +1792,12 @@ function RepaymentModal({
       })
       onClose()
     } catch (sendError) {
-      setError(actionableFirebaseError(sendError, 'Payment request could not be sent. Check connection and retry.'))
+      setError(actionableFirebaseError(
+        sendError,
+        mode === 'record'
+          ? 'Payment could not be saved. Check connection and retry.'
+          : 'Payment request could not be sent. Check connection and retry.',
+      ))
     } finally {
       setWorking(false)
     }
@@ -1822,7 +1829,7 @@ function RepaymentModal({
         ><span /></button>
         <div className="modal-header repayment-header">
           <div>
-            <p className="modal-kicker">Offline repayment</p>
+            <p className="modal-kicker">{mode === 'record' ? `Paid by ${entry.borrower.name}` : 'Offline repayment'}</p>
             <h2 id="repayment-title">Record payment</h2>
           </div>
           <button className="icon-button" type="button" onClick={closeSheet} aria-label="Close dialog" disabled={working}>
@@ -1866,7 +1873,7 @@ function RepaymentModal({
             <div className="repayment-proof-heading">
               <div>
                 <strong id="repayment-proof-title">Payment proof</strong>
-                <span>Required · 1–5 screenshots · 6 MB each</span>
+                <span>{mode === 'request' ? 'Required · 1–5 screenshots' : 'Optional · up to 5 screenshots'} · 6 MB each</span>
               </div>
               <button
                 className="payment-upload-button"
@@ -1900,7 +1907,7 @@ function RepaymentModal({
               </div>
             ) : (
               <button type="button" className="repayment-proof-empty" onClick={() => proofInputRef.current?.click()} disabled={working}>
-                <ImageIcon size={20} /> Add screenshot showing completed payment
+                <ImageIcon size={20} /> {mode === 'request' ? 'Add screenshot showing completed payment' : 'Attach a receipt or screenshot'}
               </button>
             )}
           </section>
@@ -1921,7 +1928,9 @@ function RepaymentModal({
             <button className="secondary-button" type="button" onClick={closeSheet} disabled={working}>Cancel</button>
             <button className="primary-button" type="submit" disabled={working}>
               {working ? <LoaderCircle className="spin" size={16} /> : null}
-              {working ? 'Uploading & sending…' : 'Send for approval'}
+              {working
+                ? mode === 'record' ? 'Saving payment…' : 'Uploading & sending…'
+                : mode === 'record' ? 'Save payment' : 'Send for approval'}
             </button>
           </div>
         </form>
@@ -2295,11 +2304,12 @@ function RepaymentRequestCard({
   resolving: boolean
   onResolve: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
 }) {
-  const statusLabel = request.status === 'pending'
-    ? 'Pending approval'
-    : request.status === 'accepted' ? 'Accepted' : 'Rejected'
+  const lenderRecorded = request.recordedBy === 'lender'
+  const statusLabel = lenderRecorded
+    ? 'Recorded'
+    : request.status === 'pending' ? 'Pending approval' : request.status === 'accepted' ? 'Accepted' : 'Rejected'
   const needsAction = request.status === 'pending' && direction === 'receivable'
-  const [expanded, setExpanded] = useState(needsAction)
+  const [expanded, setExpanded] = useState(false)
   return (
     <article className={`repayment-request-card ${request.status}`}>
       <button
@@ -2309,7 +2319,7 @@ function RepaymentRequestCard({
         onClick={() => setExpanded((open) => !open)}
       >
         <span className="transaction-disclosure-copy">
-          <strong>{request.payerName}</strong>
+          <strong>{lenderRecorded ? `${request.payerName} paid` : request.payerName}</strong>
           <small>{request.method} · {shortDate.format(new Date(`${request.paidAt}T00:00:00`))}</small>
         </span>
         <span className="transaction-disclosure-value">
@@ -2321,10 +2331,10 @@ function RepaymentRequestCard({
       {expanded ? (
         <div className="transaction-disclosure-body">
           <div className="repayment-request-details">
-            <span><CalendarDays size={13} /> Submitted {dateTime.format(new Date(timestampMillis(request.createdAt)))}</span>
+            <span><CalendarDays size={13} /> {lenderRecorded ? 'Recorded' : 'Submitted'} {dateTime.format(new Date(timestampMillis(request.createdAt)))}</span>
           </div>
           {request.note ? <p>{request.note}</p> : null}
-          <PaymentScreenshotGallery screenshots={request.proofScreenshots} compact />
+          {request.proofScreenshots.length ? <PaymentScreenshotGallery screenshots={request.proofScreenshots} compact /> : null}
           {needsAction ? (
             <div className="repayment-review-actions">
               <button type="button" className="repayment-reject" disabled={resolving} onClick={() => onResolve(request, 'rejected')}>
@@ -2440,6 +2450,144 @@ function EntryTransactionHistory({
   )
 }
 
+export function OpenDueCard({
+  entry,
+  direction,
+  review,
+  repayments,
+  reviews,
+  resolvingReviewId,
+  resolvingRepaymentId,
+  onEditDue,
+  onDeleteDue,
+  onOpenSplit,
+  onRequestReview,
+  onResolveReview,
+  onRecordPayment,
+  onResolveRepayment,
+}: {
+  entry: LedgerEntry
+  direction: Direction
+  review?: LedgerReview
+  repayments: RepaymentRequest[]
+  reviews: LedgerReviewRecord[]
+  resolvingReviewId: string | null
+  resolvingRepaymentId: string | null
+  onEditDue: (entry: LedgerEntry) => void
+  onDeleteDue: (entry: LedgerEntry) => void
+  onOpenSplit: () => void
+  onRequestReview: (entry: LedgerEntry, kind: ReviewKind) => void
+  onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
+  onRecordPayment: (entry: LedgerEntry) => void
+  onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const Icon = methodIcons[entry.method]
+  const splitReference = getSplitLedgerReference(entry.id)
+  const pendingRepayments = repayments.filter((request) => request.status === 'pending')
+  const completedRepayments = repayments.filter((request) => request.status !== 'pending')
+  const completedReviews = reviews.filter((item) => item.status !== 'pending')
+  const remainingAmount = entryRemainingAmount(entry)
+  const originalAmount = entryOriginalAmount(entry)
+  const partiallyPaid = canonicalEntryStatus(entry) === 'partially_paid'
+  const attentionCount = pendingRepayments.length + (review ? 1 : 0)
+  const historyCount = completedRepayments.length + completedReviews.length
+
+  return (
+    <article className={`drawer-entry due-card ${partiallyPaid ? 'drawer-entry-partial' : ''}`}>
+      <button
+        className="due-summary"
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <span className="method-icon"><Icon size={17} /></span>
+        <span className="drawer-entry-copy">
+          <strong>{entry.occasion}</strong>
+          <small>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · ${entry.lender.name}` : ''}</small>
+          {attentionCount || historyCount ? (
+            <span className="due-summary-flags">
+              {attentionCount ? <b className="attention">{attentionCount} needs review</b> : null}
+              {historyCount ? <b className="history">{historyCount} in history</b> : null}
+            </span>
+          ) : null}
+        </span>
+        <span className="drawer-entry-balance">
+          <strong className="drawer-entry-amount">{money.format(remainingAmount)}</strong>
+          {partiallyPaid ? <small>{money.format(entryPaidAmount(entry))} of {money.format(originalAmount)} paid</small> : null}
+        </span>
+        <ChevronDown className={expanded ? 'expanded' : ''} size={17} aria-hidden="true" />
+      </button>
+
+      {expanded ? (
+        <div className="due-card-details">
+          {entry.screenshots?.length ? <PaymentScreenshotGallery screenshots={entry.screenshots} compact /> : null}
+          {review ? (
+            <div className={`entry-review ${direction}`}>
+              <div>
+                <span className="review-status"><Flag size={13} /> Review pending</span>
+                <strong>
+                  {review.kind === 'amount'
+                    ? `${entry.borrower.name} requested changes to this due.`
+                    : `${entry.borrower.name} says this has already been paid.`}
+                </strong>
+                {review.note ? <p>“{review.note}”</p> : null}
+                {review.proofScreenshots?.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} compact /> : null}
+              </div>
+              {direction === 'receivable' ? (
+                <div className="review-actions">
+                  <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
+                  <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'approved')}>
+                    {review.kind === 'amount' ? 'Apply changes' : 'Confirm paid'}
+                  </button>
+                </div>
+              ) : <small>Waiting for {entry.lender.name} to review this.</small>}
+            </div>
+          ) : null}
+          {pendingRepayments.length ? (
+            <div className="entry-repayment-list">
+              {pendingRepayments.map((request) => (
+                <RepaymentRequestCard
+                  key={request.id}
+                  request={request}
+                  direction={direction}
+                  resolving={resolvingRepaymentId === request.id}
+                  onResolve={onResolveRepayment}
+                />
+              ))}
+            </div>
+          ) : null}
+          <EntryTransactionHistory
+            repayments={completedRepayments}
+            reviews={completedReviews}
+            direction={direction}
+            onResolveRepayment={onResolveRepayment}
+          />
+          {direction === 'receivable' ? (
+            <div className="drawer-entry-actions">
+              {!review && !pendingRepayments.length ? (
+                <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><Banknote size={16} /> Record payment</button>
+              ) : null}
+              {splitReference
+                ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
+                : <>
+                    <button className="entry-edit-action" type="button" onClick={() => onEditDue(entry)} aria-label={`Edit ${entry.occasion} due`}><Pencil size={15} /> Edit</button>
+                    <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button>
+                  </>}
+            </div>
+          ) : (
+            <div className="drawer-entry-actions payer-actions">
+              <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><CheckCircle2 size={15} /> Record payment</button>
+              {!review ? <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Already paid</button> : null}
+              {!review ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report issue</button> : null}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
 function PersonDrawer({
   summary,
   direction,
@@ -2454,7 +2602,6 @@ function PersonDrawer({
   onDeleteContact,
   onDeleteDue,
   onOpenSplit,
-  onSettle,
   onRequestReview,
   onResolveReview,
   onRecordPayment,
@@ -2473,7 +2620,6 @@ function PersonDrawer({
   onDeleteContact: (person: Person) => void
   onDeleteDue: (entry: LedgerEntry) => void
   onOpenSplit: () => void
-  onSettle: (id: string) => void
   onRequestReview: (entry: LedgerEntry, kind: ReviewKind) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
   onRecordPayment: (entry: LedgerEntry) => void
@@ -2495,6 +2641,7 @@ function PersonDrawer({
   const dragYRef = useRef(0)
   const [dragging, setDragging] = useState(false)
   const [closing, setClosing] = useState(false)
+  const [paidExpanded, setPaidExpanded] = useState(false)
 
   function closeSheet() {
     if (closing) return
@@ -2622,104 +2769,42 @@ function PersonDrawer({
             </div>
           ) : null}
           <div className="drawer-entry-list">
-            {openDueEntries.map((entry) => {
-            const Icon = methodIcons[entry.method]
-            const review = pendingReviews.get(entry.id)
-            const splitReference = getSplitLedgerReference(entry.id)
-            const entryRepayments = repaymentRequests.get(entry.id) ?? []
-            const entryReviews = reviewHistory.get(entry.id) ?? []
-            const pendingRepayments = entryRepayments.filter((request) => request.status === 'pending')
-            const completedRepayments = entryRepayments.filter((request) => request.status !== 'pending')
-            const completedReviews = entryReviews.filter((item) => item.status !== 'pending')
-            const remainingAmount = entryRemainingAmount(entry)
-            const originalAmount = entryOriginalAmount(entry)
-            const partiallyPaid = canonicalEntryStatus(entry) === 'partially_paid'
-            return (
-                <article className={`drawer-entry ${partiallyPaid ? 'drawer-entry-partial' : ''}`} key={entry.id}>
-                  <span className="method-icon"><Icon size={17} /></span>
-                  <div className="drawer-entry-copy">
-                    <h4>{entry.occasion}</h4>
-                    <p>{splitReference ? 'Split · ' : ''}{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}{direction === 'payable' ? ` · Recorded by ${entry.lender.name}` : ''}</p>
-                  </div>
-                  <div className="drawer-entry-balance">
-                    <strong className="drawer-entry-amount">{money.format(remainingAmount)}</strong>
-                    {partiallyPaid ? <small>{money.format(entryPaidAmount(entry))} paid of {money.format(originalAmount)}</small> : null}
-                  </div>
-                  {entry.screenshots?.length ? (
-                    <PaymentScreenshotGallery screenshots={entry.screenshots} compact />
-                  ) : null}
-                  {review ? (
-                    <div className={`entry-review ${direction}`}>
-                      <div>
-                        <span className="review-status"><Flag size={13} /> Review pending</span>
-                        <strong>
-                          {review.kind === 'amount'
-                            ? `${entry.borrower.name} requested changes to this due.`
-                            : `${entry.borrower.name} says this has already been paid.`}
-                        </strong>
-                        {review.note ? <p>“{review.note}”</p> : null}
-                        {review.proofScreenshots?.length ? <PaymentScreenshotGallery screenshots={review.proofScreenshots} compact /> : null}
-                      </div>
-                      {direction === 'receivable' ? (
-                        <div className="review-actions">
-                          <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'rejected')}>Keep as is</button>
-                          <button type="button" disabled={resolvingReviewId === entry.id} onClick={() => onResolveReview(review, entry, 'approved')}>
-                            {review.kind === 'amount' ? 'Apply changes' : 'Confirm paid'}
-                          </button>
-                        </div>
-                      ) : <small>Waiting for {entry.lender.name} to review this.</small>}
-                    </div>
-                  ) : null}
-                  {pendingRepayments.length ? (
-                    <div className="entry-repayment-list">
-                      {pendingRepayments.map((request) => (
-                        <RepaymentRequestCard
-                          key={request.id}
-                          request={request}
-                          direction={direction}
-                          resolving={resolvingRepaymentId === request.id}
-                          onResolve={onResolveRepayment}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                  <EntryTransactionHistory
-                    repayments={completedRepayments}
-                    reviews={completedReviews}
-                    direction={direction}
-                    onResolveRepayment={onResolveRepayment}
-                  />
-                  {direction === 'receivable' ? (
-                    <div className="drawer-entry-actions">
-                      {!review && !entryRepayments.some((request) => request.status === 'pending') ? <button className="entry-action" type="button" onClick={() => onSettle(entry.id)}><CheckCircle2 size={16} /> Mark as paid</button> : null}
-                      {splitReference
-                        ? <button className="entry-split-action" type="button" onClick={onOpenSplit}><Split size={15} /> Manage split</button>
-                        : <>
-                            <button className="entry-edit-action" type="button" onClick={() => onEditDue(entry)} aria-label={`Edit ${entry.occasion} due`}><Pencil size={15} /> Edit</button>
-                            <button className="entry-delete-action" type="button" onClick={() => onDeleteDue(entry)} aria-label={`Delete ${entry.occasion} due`}><Trash2 size={15} /> Delete</button>
-                          </>}
-                    </div>
-                  ) : (
-                    <div className="drawer-entry-actions payer-actions">
-                      <button className="entry-action paid-claim" type="button" onClick={() => onRecordPayment(entry)}><CheckCircle2 size={15} /> Record payment</button>
-                      {!review ? <button className="entry-action proof-claim" type="button" onClick={() => onRequestReview(entry, 'paid')}><ImagePlus size={15} /> Already paid</button> : null}
-                      {!review ? <button className="entry-action report" type="button" onClick={() => onRequestReview(entry, 'amount')}><Flag size={15} /> Report issue</button> : null}
-                    </div>
-                  )}
-                </article>
-              )
-            })}
+            {openDueEntries.map((entry) => (
+              <OpenDueCard
+                key={entry.id}
+                entry={entry}
+                direction={direction}
+                review={pendingReviews.get(entry.id)}
+                repayments={repaymentRequests.get(entry.id) ?? []}
+                reviews={reviewHistory.get(entry.id) ?? []}
+                resolvingReviewId={resolvingReviewId}
+                resolvingRepaymentId={resolvingRepaymentId}
+                onEditDue={onEditDue}
+                onDeleteDue={onDeleteDue}
+                onOpenSplit={onOpenSplit}
+                onRequestReview={onRequestReview}
+                onResolveReview={onResolveReview}
+                onRecordPayment={onRecordPayment}
+                onResolveRepayment={onResolveRepayment}
+              />
+            ))}
           </div>
           {paidDueEntries.length ? (
             <section className="drawer-paid-history" aria-labelledby="paid-dues-title">
-              <div className="drawer-section-title drawer-paid-title">
+              <button
+                className="drawer-section-title drawer-paid-title paid-history-toggle"
+                type="button"
+                aria-expanded={paidExpanded}
+                onClick={() => setPaidExpanded((open) => !open)}
+              >
                 <div>
                   <h3 id="paid-dues-title">Paid</h3>
                   <p>Completed payments with {firstName}</p>
                 </div>
                 <span>{paidDueEntries.length}</span>
-              </div>
-              <div className="drawer-entry-list">
+                <ChevronDown className={paidExpanded ? 'expanded' : ''} size={17} aria-hidden="true" />
+              </button>
+              {paidExpanded ? <div className="drawer-entry-list">
                 {paidDueEntries.map((entry) => {
                   const Icon = methodIcons[entry.method]
                   const splitReference = getSplitLedgerReference(entry.id)
@@ -2764,7 +2849,7 @@ function PersonDrawer({
                     </article>
                   )
                 })}
-              </div>
+              </div> : null}
             </section>
           ) : null}
         </div>
@@ -2789,7 +2874,7 @@ function TallyBackApp() {
   const [importingContacts, setImportingContacts] = useState(false)
   const [reviewIntent, setReviewIntent] = useState<{ entry: LedgerEntry; kind: ReviewKind } | null>(null)
   const [reviewRecords, setReviewRecords] = useState<LedgerReviewRecord[]>([])
-  const [repaymentIntent, setRepaymentIntent] = useState<LedgerEntry | null>(null)
+  const [repaymentIntent, setRepaymentIntent] = useState<{ entry: LedgerEntry; mode: 'request' | 'record' } | null>(null)
   const [repaymentRequests, setRepaymentRequests] = useState<RepaymentRequest[]>([])
   const [activities, setActivities] = useState<LedgerActivity[]>([])
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<LedgerEntry | null>(null)
@@ -3214,13 +3299,16 @@ function TallyBackApp() {
         ? normalizePhone(repayment.lenderPhone) === userPhone
         : normalizePhone(repayment.borrowerPhone) === userPhone
       if (!belongsToDirection) return
-      if (!explicitKeys.has(`repayment_submitted:${repayment.id}`)) items.push({
+      if (repayment.recordedBy !== 'lender' && !explicitKeys.has(`repayment_submitted:${repayment.id}`)) items.push({
         id: `repayment-request-${repayment.id}`,
         timestamp: timestampMillis(repayment.createdAt),
         kind: 'repayment-request',
         repayment,
       })
-      if (repayment.status !== 'pending' && !explicitKeys.has(`repayment_${repayment.status}:${repayment.id}`)) {
+      const resolutionType = repayment.recordedBy === 'lender' && repayment.status === 'accepted'
+        ? 'payment_recorded'
+        : `repayment_${repayment.status}`
+      if (repayment.status !== 'pending' && !explicitKeys.has(`${resolutionType}:${repayment.id}`)) {
         items.push({
           id: `repayment-resolution-${repayment.id}`,
           timestamp: timestampMillis(repayment.reviewedAt),
@@ -3309,16 +3397,6 @@ function TallyBackApp() {
     }
   }
 
-  async function markEntrySettled(id: string) {
-    try {
-      if (!auth?.currentUser) throw new Error('Sign in required')
-      await settleFirebaseEntry(id, auth.currentUser.uid)
-      setToast('Marked as paid.')
-    } catch {
-      setToast('Could not update this entry. Please try again.')
-    }
-  }
-
   async function deleteDue(entry: LedgerEntry) {
     if (getSplitLedgerReference(entry.id)) throw new Error('Manage split dues from Splits.')
     await deleteFirebaseEntry(entry.id)
@@ -3397,6 +3475,35 @@ function TallyBackApp() {
           await deletePaymentScreenshots(proofScreenshots)
         } catch (cleanupError) {
           console.warn('[repayment/proof/cleanup]', cleanupError)
+        }
+      }
+      throw error
+    }
+  }
+
+  async function saveLenderPayment(entry: LedgerEntry, submission: RepaymentSubmissionDraft) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser || !currentUser) throw new Error('Sign in again before recording payment.')
+    const { proofFiles, ...draft } = submission
+    let proofScreenshots: PaymentScreenshot[] = []
+    try {
+      const authenticatedPhone = await getAuthenticatedPhone(firebaseUser, true)
+      if (authenticatedPhone !== toE164(entry.lender.phone) || entry.createdBy !== firebaseUser.uid) {
+        throw new Error('Only lender who created this due can record payment.')
+      }
+      if (proofFiles.length) {
+        proofScreenshots = await uploadPaymentScreenshots(entry.id, firebaseUser.uid, proofFiles)
+      }
+      await recordLenderPayment(entry, firebaseUser.uid, currentUser, { ...draft, proofScreenshots })
+      setToast(draft.amount === entryRemainingAmount(entry)
+        ? 'Payment recorded. Due marked paid.'
+        : 'Partial payment recorded. Balance updated.')
+    } catch (error) {
+      if (proofScreenshots.length) {
+        try {
+          await deletePaymentScreenshots(proofScreenshots)
+        } catch (cleanupError) {
+          console.warn('[lender-payment/proof/cleanup]', cleanupError)
         }
       }
       throw error
@@ -3714,6 +3821,7 @@ function TallyBackApp() {
                         repayment_submitted: 'Repayment submitted',
                         repayment_accepted: 'Repayment accepted',
                         repayment_rejected: 'Repayment rejected',
+                        payment_recorded: 'Payment recorded',
                         mistake_reported: 'Mistake reported',
                         correction_accepted: 'Correction accepted',
                         correction_rejected: 'Correction rejected',
@@ -3721,7 +3829,7 @@ function TallyBackApp() {
                       }
                       const rejected = activity.type === 'repayment_rejected' || activity.type === 'correction_rejected'
                       const pending = activity.type === 'repayment_submitted' || activity.type === 'mistake_reported'
-                      const completed = activity.type === 'repayment_accepted' || activity.type === 'correction_accepted' || activity.type === 'due_marked_paid'
+                      const completed = activity.type === 'repayment_accepted' || activity.type === 'payment_recorded' || activity.type === 'correction_accepted' || activity.type === 'due_marked_paid'
                       const StateIcon = rejected ? X : pending ? Flag : completed ? Check : activity.type === 'due_edited' ? Pencil : ReceiptText
                       const eventTime = timestampMillis(activity.occurredAt)
                       return (
@@ -3770,6 +3878,7 @@ function TallyBackApp() {
                       const { repayment } = item
                       const isResolution = item.kind === 'repayment-resolution'
                       const accepted = repayment.status === 'accepted'
+                      const lenderRecorded = repayment.recordedBy === 'lender'
                       const entry = entries.find((candidate) => candidate.id === repayment.dueId)
                       const person = direction === 'receivable' ? entry?.borrower : entry?.lender
                       return (
@@ -3778,12 +3887,12 @@ function TallyBackApp() {
                             {isResolution ? accepted ? <Check size={17} /> : <X size={17} /> : <ArrowUpRight size={17} />}
                           </span>
                           <div>
-                            <h3>{isResolution ? accepted ? 'Repayment accepted' : 'Repayment rejected' : 'Repayment submitted'}</h3>
+                            <h3>{isResolution ? accepted ? lenderRecorded ? 'Payment recorded' : 'Repayment accepted' : 'Repayment rejected' : 'Repayment submitted'}</h3>
                             <p>{isResolution ? entry?.lender.name ?? 'Lender' : repayment.payerName} · {person?.name ?? 'Participant'} · {entry?.occasion ?? 'Due'} · {shortDate.format(new Date(`${repayment.paidAt}T00:00:00`))}</p>
                           </div>
                           <div className="activity-amount">
                             <strong>{money.format(repayment.amount)}</strong>
-                            <span className={isResolution ? repayment.status : 'review'}>{isResolution ? accepted ? 'Accepted' : 'Rejected' : 'Pending'}</span>
+                            <span className={isResolution ? repayment.status : 'review'}>{isResolution ? accepted ? lenderRecorded ? 'Recorded' : 'Accepted' : 'Rejected' : 'Pending'}</span>
                           </div>
                         </article>
                       )
@@ -3848,10 +3957,12 @@ function TallyBackApp() {
           setSelectedPhone(null)
           setView('splits')
         }}
-        onSettle={markEntrySettled}
         onRequestReview={(entry, kind) => setReviewIntent({ entry, kind })}
         onResolveReview={resolveReview}
-        onRecordPayment={setRepaymentIntent}
+        onRecordPayment={(entry) => setRepaymentIntent({
+          entry,
+          mode: direction === 'receivable' ? 'record' : 'request',
+        })}
         onResolveRepayment={resolveRepayment}
       />}
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
@@ -3863,9 +3974,12 @@ function TallyBackApp() {
         onSend={(draft) => sendReviewRequest(reviewIntent.entry, draft)}
       /> : null}
       {repaymentIntent ? <RepaymentModal
-        entry={repaymentIntent}
+        entry={repaymentIntent.entry}
+        mode={repaymentIntent.mode}
         onClose={() => setRepaymentIntent(null)}
-        onSend={(draft) => sendRepayment(repaymentIntent, draft)}
+        onSend={(draft) => repaymentIntent.mode === 'record'
+          ? saveLenderPayment(repaymentIntent.entry, draft)
+          : sendRepayment(repaymentIntent.entry, draft)}
       /> : null}
       {deleteEntryTarget ? <DeleteDueModal entry={deleteEntryTarget} onClose={() => setDeleteEntryTarget(null)} onDelete={deleteDue} /> : null}
       {deleteContactTarget ? <DeleteContactModal person={deleteContactTarget} onClose={() => setDeleteContactTarget(null)} onDelete={deleteContact} /> : null}

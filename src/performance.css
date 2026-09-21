@@ -786,6 +786,133 @@
   contain-intrinsic-size: auto 50px;
 }
 
+/* Summary-first due cards keep long ledgers scannable. Evidence, review tools,
+   and history are mounted only after deliberate expansion. */
+.drawer-entry.due-card {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  contain-intrinsic-size: auto 64px;
+}
+
+.drawer-entry > .due-summary {
+  width: 100%;
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto 17px;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.due-summary .drawer-entry-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.due-summary .drawer-entry-copy > strong,
+.due-summary .drawer-entry-copy > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.due-summary .drawer-entry-copy > strong {
+  font-size: 11px;
+}
+
+.due-summary .drawer-entry-copy > small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.due-summary-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.due-summary-flags b {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #f1edfb;
+  color: #615da2;
+  font-size: 8px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.due-summary-flags b.attention {
+  background: #fff3cf;
+  color: #80651d;
+}
+
+.due-summary > svg,
+.paid-history-toggle > svg {
+  color: #7a7a8a;
+  transition: transform 140ms ease;
+}
+
+.due-summary > svg.expanded,
+.paid-history-toggle > svg.expanded {
+  transform: rotate(180deg);
+}
+
+.due-card-details {
+  display: grid;
+  gap: 7px;
+  padding: 8px 9px 9px;
+  border-top: 1px solid var(--line);
+}
+
+.due-card-details > .ledger-proof-block.ledger-proof-compact,
+.due-card-details > .entry-transaction-history {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.due-card-details > .ledger-proof-block.ledger-proof-compact {
+  min-height: 42px;
+  padding: 2px 0;
+}
+
+.due-card-details > .entry-transaction-history {
+  border-top: 1px solid var(--line);
+}
+
+.due-card-details .transaction-history-toggle {
+  min-height: 42px;
+  padding-inline: 0;
+}
+
+.due-card-details .drawer-entry-actions {
+  margin-top: 0;
+}
+
+.paid-history-toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.paid-history-toggle > span {
+  margin-left: auto;
+}
+
+.paid-history-toggle > svg {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 600px) {
   .drawer-entry-actions.payer-actions {
     display: grid;

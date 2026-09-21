@@ -42,6 +42,15 @@ describe('partial repayment calculations', () => {
     expect(final).toMatchObject({ paidAmount: 1000, remainingAmount: 0, status: 'paid' })
   })
 
+  it('keeps repeated decimal payments at paise precision', () => {
+    const decimalDue = entry({ amount: 0.3, originalAmount: 0.3, remainingAmount: 0.3 })
+    const first = applyApprovedPayment(decimalDue, 0.1)
+    const final = applyApprovedPayment(entry({ ...decimalDue, ...first }), 0.2)
+
+    expect(first).toMatchObject({ paidAmount: 0.1, remainingAmount: 0.2, status: 'partially_paid' })
+    expect(final).toMatchObject({ paidAmount: 0.3, remainingAmount: 0, status: 'paid' })
+  })
+
   it('rejects zero and overpayment amounts', () => {
     expect(() => applyApprovedPayment(entry(), 0)).toThrow('greater than zero')
     expect(() => applyApprovedPayment(entry(), 1001)).toThrow('cannot exceed remaining due')
