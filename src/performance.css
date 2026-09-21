@@ -178,22 +178,6 @@
   font-size: 11px;
 }
 
-.repayment-proof-empty {
-  width: 100%;
-  min-height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 10px;
-  border: 1px dashed #cbc4df;
-  border-radius: 11px;
-  background: #fffefd;
-  color: #68627b;
-  font-size: 9px;
-  font-weight: 650;
-}
-
 .repayment-preview-rail {
   display: grid;
   grid-auto-flow: column;

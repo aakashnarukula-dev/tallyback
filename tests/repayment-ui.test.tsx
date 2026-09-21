@@ -77,6 +77,8 @@ describe('record payment sheet', () => {
     const user = userEvent.setup()
     render(<RepaymentModal entry={entry} mode="request" onClose={vi.fn()} onSend={onSend} />)
 
+    expect(screen.getByRole('button', { name: 'Add screenshots' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Add screenshot showing completed payment/i })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Send for approval' }))
 
     expect(screen.getByRole('alert').textContent).toContain('Add at least one')

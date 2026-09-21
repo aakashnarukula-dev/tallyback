@@ -1926,11 +1926,7 @@ export function RepaymentModal({
                   </figure>
                 ))}
               </div>
-            ) : (
-              <button type="button" className="repayment-proof-empty" onClick={() => proofInputRef.current?.click()} disabled={working}>
-                <ImageIcon size={20} /> {mode === 'request' ? 'Add screenshot showing completed payment' : 'Attach a receipt or screenshot'}
-              </button>
-            )}
+            ) : null}
           </section>
 
           <label className="repayment-note">
