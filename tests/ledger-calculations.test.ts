@@ -6,6 +6,7 @@ import {
   entryRemainingAmount,
   isPaidEntry,
   outstandingTotals,
+  sortLedgerEntriesOldestFirst,
 } from '../src/ledger-calculations'
 
 const entry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
@@ -77,6 +78,23 @@ describe('partial repayment calculations', () => {
 })
 
 describe('paid history and totals', () => {
+  it('sorts ledger cards by displayed date from oldest to newest', () => {
+    const entries = [
+      entry({ id: 'aug-19', date: '2026-08-19' }),
+      entry({ id: 'jun-19', date: '2026-06-19' }),
+      entry({ id: 'aug-03-b', date: '2026-08-03' }),
+      entry({ id: 'aug-03-a', date: '2026-08-03' }),
+    ]
+
+    expect(sortLedgerEntriesOldestFirst(entries).map((item) => item.id)).toEqual([
+      'jun-19',
+      'aug-03-a',
+      'aug-03-b',
+      'aug-19',
+    ])
+    expect(entries.map((item) => item.id)).toEqual(['aug-19', 'jun-19', 'aug-03-b', 'aug-03-a'])
+  })
+
   it('retains original amount while paid due has zero remaining', () => {
     const paid = entry({ paidAmount: 1000, remainingAmount: 0, status: 'paid' })
     expect(isPaidEntry(paid)).toBe(true)

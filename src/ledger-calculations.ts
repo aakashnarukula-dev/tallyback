@@ -34,6 +34,10 @@ export function isPaidEntry(entry: Pick<LedgerEntry, 'amount' | 'originalAmount'
   return canonicalEntryStatus(entry) === 'paid'
 }
 
+export function sortLedgerEntriesOldestFirst(entries: LedgerEntry[]) {
+  return [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+}
+
 export function applyApprovedPayment(
   entry: Pick<LedgerEntry, 'amount' | 'originalAmount' | 'paidAmount' | 'remainingAmount' | 'status'>,
   paymentAmount: number,

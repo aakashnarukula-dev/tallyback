@@ -109,6 +109,7 @@ import {
   hasValidMoneyPrecision,
   isPaidEntry,
   outstandingTotals,
+  sortLedgerEntriesOldestFirst,
 } from './ledger-calculations'
 import { money } from './currency'
 
@@ -2750,15 +2751,10 @@ function PersonDrawer({
   onRecordPayment: (entry: LedgerEntry) => void
   onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
 }) {
-  const openDueEntries = summary.entries
-    .filter((entry) => !isPaidEntry(entry))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-  const paidDueEntries = summary.entries
-    .filter(isPaidEntry)
-    .sort((a, b) => (
-      (b.settledAt ?? `${b.date}T00:00:00`).localeCompare(a.settledAt ?? `${a.date}T00:00:00`)
-      || b.id.localeCompare(a.id)
-    ))
+  const openDueEntries = sortLedgerEntriesOldestFirst(
+    summary.entries.filter((entry) => !isPaidEntry(entry)),
+  )
+  const paidDueEntries = sortLedgerEntriesOldestFirst(summary.entries.filter(isPaidEntry))
   const firstName = summary.person.name.split(' ')[0]
   const sheetRef = useRef<HTMLElement>(null)
   const closeTimerRef = useRef<number | null>(null)
