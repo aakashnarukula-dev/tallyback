@@ -126,6 +126,18 @@ type ContactSummary = {
   entries: LedgerEntry[]
 }
 
+export function shouldShowContactSummary(
+  summary: Pick<ContactSummary, 'entries'>,
+  direction: Direction,
+  isSavedContact: boolean,
+) {
+  return (direction === 'receivable' && isSavedContact) || summary.entries.length > 0
+}
+
+export function canDeleteContactSummary(summary: Pick<ContactSummary, 'entries'>) {
+  return summary.entries.length === 0
+}
+
 const SplitPublicPage = lazy(() => import('./SplitPublicPage'))
 const SplitWorkspace = lazy(() => import('./SplitWorkspace'))
 
@@ -2225,7 +2237,7 @@ function DeleteContactModal({
       <section className="modal-card delete-due-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-contact-title" aria-describedby="delete-contact-description" onMouseDown={(event) => event.stopPropagation()}>
         <span className="delete-warning-icon" aria-hidden="true"><AlertTriangle size={22} /></span>
         <h2 id="delete-contact-title">Delete {person.name}?</h2>
-        <p id="delete-contact-description">This removes the saved contact. Paid history remains in Activity. This cannot be undone.</p>
+        <p id="delete-contact-description">This removes the saved contact. This cannot be undone.</p>
         <form onSubmit={submit}>
           {error ? <p className="form-error">{error}</p> : null}
           <div className="modal-actions">
@@ -2765,6 +2777,7 @@ function PersonDrawer({
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
   const [paidExpanded, setPaidExpanded] = useState(false)
   const [expandedPaidEntryId, setExpandedPaidEntryId] = useState<string | null>(null)
+  const canDeleteContact = canDeleteContactSummary(summary)
 
   function closeSheet() {
     if (closing) return
@@ -2858,7 +2871,7 @@ function PersonDrawer({
                   <Plus size={16} /> Add due
                 </button>
               ) : null}
-              {!summary.openCount ? (
+              {canDeleteContact ? (
                 <button
                   className="drawer-delete-contact"
                   type="button"
@@ -3319,10 +3332,10 @@ function TallyBackApp() {
       grouped.set(key, existing)
     })
     return [...grouped.values()]
-      .filter((summary) => (
-        direction === 'receivable'
-          ? contactsByPhone.has(normalizePhone(summary.person.phone)) || summary.entries.length > 0
-          : summary.entries.length > 0
+      .filter((summary) => shouldShowContactSummary(
+        summary,
+        direction,
+        contactsByPhone.has(normalizePhone(summary.person.phone)),
       ))
       .sort((a, b) => b.total - a.total || a.person.name.localeCompare(b.person.name))
   }, [contacts, contactsByPhone, direction, pendingReviews, relevantEntries, repaymentsByDue, userPhone])
@@ -3525,18 +3538,17 @@ function TallyBackApp() {
     const firebaseUser = auth?.currentUser
     if (!firebaseUser) throw new Error('Sign in required.')
     const phone = normalizePhone(person.phone)
-    const hasOpenDue = entries.some((entry) => (
-      !isPaidEntry(entry)
-      && normalizePhone(entry.lender.phone) === userPhone
+    const hasAnyDue = entries.some((entry) => (
+      normalizePhone(entry.lender.phone) === userPhone
       && normalizePhone(entry.borrower.phone) === phone
     ))
-    if (hasOpenDue) throw new Error('Settle or delete every open due before deleting this contact.')
+    if (hasAnyDue) throw new Error('Contacts with current or paid dues cannot be deleted.')
 
     await deleteFirebaseContact(firebaseUser.uid, phone)
     setContacts((current) => current.filter((contact) => normalizePhone(contact.phone) !== phone))
     setSelectedPhone(null)
     setDeleteContactTarget(null)
-    setToast(`${person.name} deleted. Paid history remains in Activity.`)
+    setToast(`${person.name} deleted.`)
   }
 
   async function sendReviewRequest(entry: LedgerEntry, submission: ReviewSubmissionDraft) {

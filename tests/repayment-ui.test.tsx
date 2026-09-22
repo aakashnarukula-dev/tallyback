@@ -2,7 +2,13 @@ import { type ComponentProps, useState } from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OpenDueCard, PaidDueCard, RepaymentModal } from '../src/App'
+import {
+  canDeleteContactSummary,
+  OpenDueCard,
+  PaidDueCard,
+  RepaymentModal,
+  shouldShowContactSummary,
+} from '../src/App'
 import { LedgerEntry, RepaymentRequest } from '../src/data'
 
 const entry: LedgerEntry = {
@@ -434,5 +440,18 @@ describe('compact due card', () => {
     expect(screen.getByText(/Only ₹600 remains/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(false)
     expect(screen.getByRole('button', { name: 'Accept payment' }).hasAttribute('disabled')).toBe(true)
+  })
+})
+
+describe('contact summary visibility', () => {
+  it('keeps paid-history contacts visible and blocks deletion', () => {
+    const paidHistoryOnly = { entries: [{ ...entry, status: 'paid' as const, remainingAmount: 0 }] }
+    const noHistory = { entries: [] }
+
+    expect(shouldShowContactSummary(paidHistoryOnly, 'receivable', false)).toBe(true)
+    expect(shouldShowContactSummary(noHistory, 'receivable', true)).toBe(true)
+    expect(shouldShowContactSummary(noHistory, 'payable', false)).toBe(false)
+    expect(canDeleteContactSummary(paidHistoryOnly)).toBe(false)
+    expect(canDeleteContactSummary(noHistory)).toBe(true)
   })
 })
