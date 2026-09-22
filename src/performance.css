@@ -878,6 +878,10 @@
   contain-intrinsic-size: auto 50px;
 }
 
+.delete-due-modal .modal-actions {
+  justify-content: center;
+}
+
 /* Summary-first due cards keep long ledgers scannable. Evidence, review tools,
    and history are mounted only after deliberate expansion. */
 .drawer-entry.due-card {
