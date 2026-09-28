@@ -782,7 +782,8 @@ a {
 .contact-ledger-main {
   width: 100%;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 11px;
   padding: 16px 15px 13px 17px;
   border: 0;
@@ -820,12 +821,14 @@ a {
 }
 
 .contact-ledger-amount {
-  grid-column: 1 / -1;
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
+  grid-column: auto;
+  justify-self: end;
+  align-items: flex-end;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 0;
+  text-align: right;
 }
 
 .contact-ledger-amount strong {

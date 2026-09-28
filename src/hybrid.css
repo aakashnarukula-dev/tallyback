@@ -1843,6 +1843,7 @@ body:has(.ledger-view-shell) #root {
     width: 100%;
     height: 100dvh;
     min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
     overflow: hidden;
     overscroll-behavior: none;
   }
