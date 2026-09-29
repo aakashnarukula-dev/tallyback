@@ -86,3 +86,22 @@ export function outstandingTotals(entries: LedgerEntry[], phone: string) {
     return totals
   }, { receivable: 0, payable: 0 })
 }
+
+// Splits one offline payment across dues in the order they were selected.
+// Every due is cleared in full until the money runs out; the last selected due
+// takes whatever is left, which may leave a balance on it.
+export function allocateBulkPayment(
+  totalAmount: number,
+  dues: Array<{ id: string; remaining: number }>,
+) {
+  let left = Number.isFinite(totalAmount) && totalAmount > 0 ? moneyPrecision(totalAmount) : 0
+  const allocations: Array<{ id: string; amount: number; remaining: number; clears: boolean }> = []
+  for (const due of dues) {
+    if (left <= 0) break
+    const amount = moneyPrecision(Math.min(left, due.remaining))
+    if (amount <= 0) continue
+    allocations.push({ id: due.id, amount, remaining: due.remaining, clears: amount >= due.remaining })
+    left = moneyPrecision(left - amount)
+  }
+  return { allocations, unallocated: left }
+}
