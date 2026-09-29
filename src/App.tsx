@@ -84,6 +84,7 @@ import { subscribeToActivities } from './firebase-activity'
 import {
   createRepaymentRequest,
   recordLenderPayment,
+  recordLenderPayments,
   RepaymentDraft,
   resolveRepaymentRequest,
   subscribeToRepaymentRequests,
@@ -104,6 +105,7 @@ import {
   TruecallerInit,
 } from './truecaller'
 import {
+  allocateBulkPayment,
   canonicalEntryStatus,
   entryOriginalAmount,
   entryPaidAmount,
@@ -2000,6 +2002,367 @@ export function RepaymentModal({
   )
 }
 
+export type BulkPaymentSubmission = {
+  totalAmount: number
+  method: PaymentMethod
+  paidAt: string
+  proofFile: File | null
+  allocations: Array<{ entry: LedgerEntry; amount: number; note: string }>
+}
+
+export function bulkPaymentNote(totalAmount: number, allocation: { amount: number; remaining: number }, userNote: string) {
+  const parts = [`Part of ${money.format(totalAmount)} offline payment`]
+  if (allocation.amount < allocation.remaining) {
+    parts.unshift(`${money.format(allocation.amount)} already paid, ${money.format(allocation.remaining - allocation.amount)} left`)
+  }
+  if (userNote.trim()) parts.push(userNote.trim())
+  return parts.join(' · ').slice(0, 280)
+}
+
+export function BulkPaymentModal({
+  person,
+  dues,
+  onClose,
+  onSave,
+}: {
+  person: Person
+  dues: LedgerEntry[]
+  onClose: () => void
+  onSave: (submission: BulkPaymentSubmission) => Promise<void>
+}) {
+  const [amount, setAmount] = useState('')
+  const [date, setDate] = useState(today())
+  const [method, setMethod] = useState<PaymentMethod>('UPI')
+  const [note, setNote] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [proof, setProof] = useState<{ file: File; previewUrl: string } | null>(null)
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const proofInputRef = useRef<HTMLInputElement>(null)
+  const sheetRef = useRef<HTMLElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const previewUrlRef = useRef<string | null>(null)
+  const dragStartRef = useRef({ y: 0, time: 0 })
+  const dragYRef = useRef(0)
+  const workingRef = useRef(false)
+  const closingRef = useRef(false)
+
+  workingRef.current = working
+
+  const numericAmount = Number(amount)
+  const dueById = new Map(dues.map((entry) => [entry.id, entry]))
+  const selectedDues = selectedIds.flatMap((id) => {
+    const entry = dueById.get(id)
+    return entry ? [{ id, remaining: entryRemainingAmount(entry) }] : []
+  })
+  const { allocations, unallocated } = allocateBulkPayment(numericAmount, selectedDues)
+  const allocationById = new Map(allocations.map((allocation) => [allocation.id, allocation]))
+  const amountEntered = Number.isFinite(numericAmount) && numericAmount > 0
+  const selectionFull = amountEntered && unallocated <= 0
+
+  function closeSheet() {
+    if (closingRef.current || workingRef.current) return
+    closingRef.current = true
+    setClosing(true)
+    setDragging(false)
+    closeTimerRef.current = window.setTimeout(onClose, 160)
+  }
+
+  useBrowserBackDismiss(() => closeSheet())
+  useEscapeDismiss(() => closeSheet(), working)
+
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || closingRef.current || workingRef.current) return
+    dragStartRef.current = { y: event.clientY, time: performance.now() }
+    dragYRef.current = 0
+    setDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    const nextY = Math.max(0, event.clientY - dragStartRef.current.y)
+    dragYRef.current = nextY
+    sheetRef.current?.style.setProperty('--sheet-drag-y', `${nextY}px`)
+  }
+
+  function finishDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragging || closingRef.current) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    const elapsed = Math.max(performance.now() - dragStartRef.current.time, 1)
+    const velocity = dragYRef.current / elapsed
+    if (dragYRef.current > Math.min(130, window.innerHeight * 0.16) || (dragYRef.current > 28 && velocity > 0.55)) {
+      closeSheet()
+      return
+    }
+    dragYRef.current = 0
+    setDragging(false)
+    sheetRef.current?.style.setProperty('--sheet-drag-y', '0px')
+  }
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+    }
+  }, [])
+
+  function toggleDue(id: string) {
+    setError('')
+    setSelectedIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id)
+      if (selectionFull || !amountEntered) return current
+      return [...current, id]
+    })
+  }
+
+  function chooseProof(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    if (!acceptedScreenshotTypes.includes(file.type)) {
+      setError('Use PNG, JPG, or WebP screenshots.')
+      return
+    }
+    if (file.size > MAX_SCREENSHOT_SIZE) {
+      setError('Each screenshot must be 6 MB or smaller.')
+      return
+    }
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+    const previewUrl = URL.createObjectURL(file)
+    previewUrlRef.current = previewUrl
+    setProof({ file, previewUrl })
+    setError('')
+  }
+
+  function removeProof() {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+    previewUrlRef.current = null
+    setProof(null)
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!amountEntered) {
+      setError('Enter payment amount greater than zero.')
+      return
+    }
+    if (!hasValidMoneyPrecision(numericAmount)) {
+      setError('Enter an amount with no more than two decimal places.')
+      return
+    }
+    if (!allocations.length) {
+      setError('Select the dues this payment covers.')
+      return
+    }
+    if (allocations.length < selectedDues.length) {
+      setError('Some selected dues are not covered by this amount. Unselect them.')
+      return
+    }
+    if (unallocated > 0) {
+      setError(`${money.format(unallocated)} is not assigned yet. Select more dues or lower the amount.`)
+      return
+    }
+    if (!date || date > today()) {
+      setError('Choose a payment date that is not in the future.')
+      return
+    }
+
+    try {
+      setWorking(true)
+      setError('')
+      await onSave({
+        totalAmount: numericAmount,
+        method,
+        paidAt: date,
+        proofFile: proof?.file ?? null,
+        allocations: allocations.map((allocation) => ({
+          entry: dueById.get(allocation.id)!,
+          amount: allocation.amount,
+          note: bulkPaymentNote(numericAmount, allocation, note),
+        })),
+      })
+      onClose()
+    } catch (saveError) {
+      setError(actionableFirebaseError(saveError, 'Payment could not be saved. Check connection and retry.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const firstName = person.name.split(' ')[0]
+
+  return (
+    <div
+      className={`modal-backdrop repayment-backdrop ${closing ? 'closing' : ''}`}
+      role="presentation"
+      onPointerDown={(event) => { if (event.target === event.currentTarget) closeSheet() }}
+    >
+      <section
+        ref={sheetRef}
+        className={`modal-card repayment-modal bulk-payment-modal ${dragging ? 'dragging' : ''} ${closing ? 'closing' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bulk-payment-title"
+        style={{ '--sheet-drag-y': '0px' } as CSSProperties}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button
+          className="add-entry-grabber"
+          type="button"
+          aria-label="Drag down to close record payment"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+        ><span /></button>
+        <div className="modal-header repayment-header">
+          <div>
+            <p className="modal-kicker">Offline payment from {firstName}</p>
+            <h2 id="bulk-payment-title">Record payment</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={closeSheet} aria-label="Close dialog" disabled={working}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={submit}>
+          <div className="repayment-fields">
+            <label>
+              Amount received
+              <div className="money-input">
+                <span>₹</span>
+                <input
+                  value={amount}
+                  onChange={(event) => {
+                    setAmount(event.target.value.replace(/[^0-9.]/g, ''))
+                    setError('')
+                  }}
+                  inputMode="decimal"
+                  placeholder="0"
+                  disabled={working}
+                  autoFocus
+                />
+              </div>
+            </label>
+            <label>
+              Payment method
+              <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)} disabled={working}>
+                {methods.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label className="repayment-note">
+              Note
+              <textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value.slice(0, 160))}
+                rows={1}
+                placeholder="Reference number or short note"
+                disabled={working}
+              />
+            </label>
+            <div className="form-field">
+              <span>Payment date</span>
+              <DatePicker value={date} onChange={setDate} max={today()} />
+            </div>
+          </div>
+
+          <section className="bulk-due-picker" aria-labelledby="bulk-due-title">
+            <div className="bulk-due-heading">
+              <strong id="bulk-due-title">Dues this payment covers</strong>
+              <span>
+                {!amountEntered
+                  ? 'Enter the amount first'
+                  : unallocated > 0
+                    ? `${money.format(unallocated)} left to assign`
+                    : 'Amount fully assigned'}
+              </span>
+            </div>
+            <div className="bulk-due-list">
+              {dues.map((entry) => {
+                const selected = selectedIds.includes(entry.id)
+                const allocation = allocationById.get(entry.id)
+                const remaining = entryRemainingAmount(entry)
+                const disabled = working || (!selected && (selectionFull || !amountEntered))
+                return (
+                  <label key={entry.id} className={`bulk-due-option ${selected ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}>
+                    <input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggleDue(entry.id)} />
+                    <span className="bulk-due-copy">
+                      <strong>{entry.occasion}</strong>
+                      <small>{entry.method} · {shortDate.format(new Date(`${entry.date}T00:00:00`))}</small>
+                    </span>
+                    <span className="bulk-due-amount">
+                      <strong>{money.format(remaining)}</strong>
+                      {selected ? (
+                        <small className={allocation?.clears ? 'clears' : 'partial'}>
+                          {!allocation
+                            ? 'Not covered'
+                            : allocation.clears
+                              ? 'Marked paid'
+                              : `${money.format(allocation.amount)} paid · ${money.format(remaining - allocation.amount)} left`}
+                        </small>
+                      ) : null}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="repayment-proof" aria-labelledby="bulk-proof-title">
+            <div className="repayment-proof-heading">
+              <div>
+                <strong id="bulk-proof-title">Receiver screenshot</strong>
+                <span>Optional · attached to every selected due · 6 MB</span>
+              </div>
+              <button
+                className="payment-upload-button"
+                type="button"
+                onClick={() => proofInputRef.current?.click()}
+                disabled={working || Boolean(proof)}
+              >
+                <ImagePlus size={16} /> Add screenshot
+              </button>
+              <input
+                ref={proofInputRef}
+                className="visually-hidden"
+                type="file"
+                accept={acceptedScreenshotTypes.join(',')}
+                aria-label="Upload receiver screenshot"
+                onChange={chooseProof}
+              />
+            </div>
+            {proof ? (
+              <div className="repayment-preview-rail">
+                <figure className="repayment-preview-card">
+                  <span className="repayment-preview-open"><img src={proof.previewUrl} alt="Receiver screenshot" /></span>
+                  <button type="button" className="repayment-preview-remove" onClick={removeProof} disabled={working}>
+                    <Trash2 size={12} /> Remove
+                  </button>
+                </figure>
+              </div>
+            ) : null}
+          </section>
+
+          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          <div className="modal-actions repayment-actions">
+            <button className="secondary-button" type="button" onClick={closeSheet} disabled={working}>Cancel</button>
+            <button className="primary-button" type="submit" disabled={working}>
+              {working ? <LoaderCircle className="spin" size={16} /> : null}
+              {working ? 'Saving payment…' : allocations.length > 1 ? `Save across ${allocations.length} dues` : 'Save payment'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function ReviewRequestModal({
   entry,
   onClose,
@@ -2839,6 +3202,7 @@ function PersonDrawer({
   onRequestReview,
   onResolveReview,
   onRecordPayment,
+  onRecordBulkPayment,
   onResolveRepayment,
 }: {
   summary: ContactSummary
@@ -2857,6 +3221,7 @@ function PersonDrawer({
   onRequestReview: (entry: LedgerEntry) => void
   onResolveReview: (review: LedgerReview, entry: LedgerEntry, decision: 'approved' | 'rejected') => void
   onRecordPayment: (entry: LedgerEntry) => void
+  onRecordBulkPayment: () => void
   onResolveRepayment: (request: RepaymentRequest, decision: 'accepted' | 'rejected') => void
 }) {
   const openDueEntries = sortLedgerEntriesOldestFirst(
@@ -2962,6 +3327,11 @@ function PersonDrawer({
           </div>
           {direction === 'receivable' ? (
             <div className="drawer-topbar-actions">
+              {summary.openCount ? (
+                <button className="drawer-quick-add drawer-record-payment" type="button" onClick={onRecordBulkPayment} aria-label={`Record payment from ${summary.person.name}`}>
+                  <Banknote size={16} /> Record payment
+                </button>
+              ) : null}
               {summary.openCount ? (
                 <button className="drawer-quick-add" type="button" onClick={() => onAddDue(summary.person)} aria-label={`Add due for ${summary.person.name}`}>
                   <Plus size={16} /> Add due
@@ -3087,6 +3457,7 @@ function TallyBackApp() {
   const [reviewIntent, setReviewIntent] = useState<LedgerEntry | null>(null)
   const [reviewRecords, setReviewRecords] = useState<LedgerReviewRecord[]>([])
   const [repaymentIntent, setRepaymentIntent] = useState<{ entry: LedgerEntry; mode: 'request' | 'record' } | null>(null)
+  const [bulkPaymentOpen, setBulkPaymentOpen] = useState(false)
   const [repaymentPayeeUpi, setRepaymentPayeeUpi] = useState<{ phone: string; upiId: string | null } | null>(null)
   const [myUpiId, setMyUpiId] = useState<string | null | undefined>(undefined)
   const [upiIdModalOpen, setUpiIdModalOpen] = useState(false)
@@ -3755,6 +4126,44 @@ function TallyBackApp() {
     }
   }
 
+  async function saveBulkLenderPayment(submission: BulkPaymentSubmission) {
+    const firebaseUser = auth?.currentUser
+    if (!firebaseUser || !currentUser) throw new Error('Sign in again before recording payment.')
+    const uploaded: PaymentScreenshot[] = []
+    try {
+      const authenticatedPhone = await getAuthenticatedPhone(firebaseUser, true)
+      if (submission.allocations.some(({ entry }) => (
+        authenticatedPhone !== toE164(entry.lender.phone) || entry.createdBy !== firebaseUser.uid
+      ))) {
+        throw new Error('Only lender who created these dues can record payment.')
+      }
+      // Storage access is scoped per due, so the one screenshot is stored once
+      // under every due it pays for.
+      const allocations = []
+      for (const allocation of submission.allocations) {
+        const proofScreenshots = submission.proofFile
+          ? await uploadPaymentScreenshots(allocation.entry.id, firebaseUser.uid, [submission.proofFile])
+          : []
+        uploaded.push(...proofScreenshots)
+        allocations.push({ ...allocation, proofScreenshots })
+      }
+      await recordLenderPayments(allocations, firebaseUser.uid, currentUser, submission)
+      const cleared = allocations.filter(({ entry, amount }) => amount >= entryRemainingAmount(entry)).length
+      setToast(cleared === allocations.length
+        ? `${money.format(submission.totalAmount)} recorded. ${cleared} ${cleared === 1 ? 'due' : 'dues'} marked paid.`
+        : `${money.format(submission.totalAmount)} recorded. ${cleared} marked paid, 1 partly paid.`)
+    } catch (error) {
+      if (uploaded.length) {
+        try {
+          await deletePaymentScreenshots(uploaded)
+        } catch (cleanupError) {
+          console.warn('[bulk-payment/proof/cleanup]', cleanupError)
+        }
+      }
+      throw error
+    }
+  }
+
   async function resolveRepayment(request: RepaymentRequest, decision: 'accepted' | 'rejected') {
     try {
       const firebaseUser = auth?.currentUser
@@ -4228,6 +4637,7 @@ function TallyBackApp() {
           entry,
           mode: direction === 'receivable' ? 'record' : 'request',
         })}
+        onRecordBulkPayment={() => setBulkPaymentOpen(true)}
         onResolveRepayment={resolveRepayment}
       />}
       {addDuePerson ? <AddEntryModal currentUser={currentUser} contact={addDuePerson} onClose={() => setAddDuePerson(null)} onSave={saveEntry} /> : null}
@@ -4245,6 +4655,16 @@ function TallyBackApp() {
         onSend={(draft) => repaymentIntent.mode === 'record'
           ? saveLenderPayment(repaymentIntent.entry, draft)
           : sendRepayment(repaymentIntent.entry, draft)}
+      /> : null}
+      {bulkPaymentOpen && selectedSummary ? <BulkPaymentModal
+        person={selectedSummary.person}
+        dues={sortLedgerEntriesOldestFirst(selectedSummary.entries.filter((entry) => (
+          !isPaidEntry(entry)
+          && !pendingReviews.has(entry.id)
+          && !(repaymentsByDue.get(entry.id) ?? []).some((request) => request.status === 'pending')
+        )))}
+        onClose={() => setBulkPaymentOpen(false)}
+        onSave={saveBulkLenderPayment}
       /> : null}
       {upiIdModalOpen && myUpiId !== undefined ? <UpiIdModal
         currentUpiId={myUpiId}

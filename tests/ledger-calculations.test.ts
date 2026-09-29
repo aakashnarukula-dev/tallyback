@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LedgerEntry } from '../src/data'
 import {
+  allocateBulkPayment,
   applyApprovedPayment,
   applyRepaymentDecision,
   entryRemainingAmount,
@@ -109,5 +110,34 @@ describe('paid history and totals', () => {
 
     expect(outstandingTotals([open, partial, paid], '+919177216132')).toEqual({ receivable: 900, payable: 0 })
     expect(outstandingTotals([open, partial, paid], '+919154195668')).toEqual({ receivable: 0, payable: 900 })
+  })
+})
+
+describe('bulk payment allocation', () => {
+  it('clears selected dues in order and reduces the last one', () => {
+    const result = allocateBulkPayment(70000, [
+      { id: 'a', remaining: 8000 },
+      { id: 'b', remaining: 50000 },
+      { id: 'c', remaining: 2000 },
+      { id: 'd', remaining: 50000 },
+    ])
+    expect(result.unallocated).toBe(0)
+    expect(result.allocations).toEqual([
+      { id: 'a', amount: 8000, remaining: 8000, clears: true },
+      { id: 'b', amount: 50000, remaining: 50000, clears: true },
+      { id: 'c', amount: 2000, remaining: 2000, clears: true },
+      { id: 'd', amount: 10000, remaining: 50000, clears: false },
+    ])
+  })
+
+  it('reports money left over when selected dues are smaller', () => {
+    const result = allocateBulkPayment(10000.5, [{ id: 'a', remaining: 8000 }])
+    expect(result.allocations).toEqual([{ id: 'a', amount: 8000, remaining: 8000, clears: true }])
+    expect(result.unallocated).toBe(2000.5)
+  })
+
+  it('ignores dues selected after the money runs out', () => {
+    const result = allocateBulkPayment(5000, [{ id: 'a', remaining: 5000 }, { id: 'b', remaining: 100 }])
+    expect(result.allocations.map(({ id }) => id)).toEqual(['a'])
   })
 })
