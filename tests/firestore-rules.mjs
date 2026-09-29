@@ -214,6 +214,43 @@ try {
     .authenticatedContext('offline-friend-after-signup', { phone_number: offlineBorrowerPhone })
     .firestore()
 
+  const lenderUpiRef = (database) => doc(database, 'upiProfiles', lenderPhone)
+  await assertFails(getDoc(lenderUpiRef(testEnvironment.unauthenticatedContext().firestore())))
+  await assertSucceeds(setDoc(lenderUpiRef(lenderDatabase), {
+    upiId: 'aakash@okhdfcbank',
+    phone: lenderPhone,
+    updatedAt: serverTimestamp(),
+  }))
+  await assertSucceeds(getDoc(lenderUpiRef(borrowerDatabase)))
+  await assertFails(setDoc(lenderUpiRef(borrowerDatabase), {
+    upiId: 'borrower@ybl',
+    phone: lenderPhone,
+    updatedAt: serverTimestamp(),
+  }))
+  await assertFails(setDoc(lenderUpiRef(borrowerDatabase), {
+    upiId: 'borrower@ybl',
+    phone: borrowerPhone,
+    updatedAt: serverTimestamp(),
+  }))
+  await assertFails(deleteDoc(lenderUpiRef(borrowerDatabase)))
+  await assertFails(setDoc(lenderUpiRef(lenderDatabase), {
+    upiId: 'not-a-upi-id',
+    phone: lenderPhone,
+    updatedAt: serverTimestamp(),
+  }))
+  await assertFails(setDoc(lenderUpiRef(lenderDatabase), {
+    upiId: 'aakash@okhdfcbank',
+    phone: lenderPhone,
+    updatedAt: serverTimestamp(),
+    extra: true,
+  }))
+  await assertSucceeds(setDoc(doc(borrowerDatabase, 'upiProfiles', borrowerPhone), {
+    upiId: 'borrower@ybl',
+    phone: borrowerPhone,
+    updatedAt: serverTimestamp(),
+  }))
+  await assertSucceeds(deleteDoc(doc(borrowerDatabase, 'upiProfiles', borrowerPhone)))
+
   await assertSucceeds(updateDoc(doc(lenderDatabase, 'users', lenderUid), {
     name: 'Aakash Updated',
     updatedAt: serverTimestamp(),
@@ -891,7 +928,7 @@ try {
   await assertFails(getMetadata(storageRef(strangerStorage, lenderProofPath)))
   await assertSucceeds(deleteObject(storageRef(lenderStorage, lenderProofPath)))
 
-  console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, source-bound activity, immutable proof, immutable identities, and private proof access passed.')
+  console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, source-bound activity, immutable proof, immutable identities, owner-only UPI IDs, and private proof access passed.')
 } finally {
   await testEnvironment.cleanup()
 }

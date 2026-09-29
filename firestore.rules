@@ -310,6 +310,21 @@ service cloud.firestore {
         && after.updatedAt == request.time;
     }
 
+    function validUpiId(value) {
+      return value is string
+        && value.size() >= 5
+        && value.size() <= 100
+        && value.matches('^[A-Za-z0-9._-]{2,}@[A-Za-z][A-Za-z0-9.-]{1,}$');
+    }
+
+    function validUpiProfile(data) {
+      return data.keys().hasAll(['upiId', 'phone', 'updatedAt'])
+        && data.keys().hasOnly(['upiId', 'phone', 'updatedAt'])
+        && validUpiId(data.upiId)
+        && data.phone == phone()
+        && data.updatedAt == request.time;
+    }
+
     function validProfile(data) {
       return data.keys().hasAll(['name', 'phone', 'updatedAt'])
         && data.keys().hasOnly(['name', 'phone', 'updatedAt'])
@@ -998,11 +1013,13 @@ service cloud.firestore {
           'currency',
           'ownerUid',
           'ownerName',
+          'ownerUpiId',
           'recipients',
           'totalAmount',
           'createdAt',
           'updatedAt'
         ])
+        && (!data.keys().hasAny(['ownerUpiId']) || validUpiId(data.ownerUpiId))
         && data.title is string
         && data.title.size() > 0
         && data.title.size() <= 100
@@ -1040,6 +1057,14 @@ service cloud.firestore {
         && request.auth.uid == userId
         && validContact(request.resource.data, contactId);
       allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /upiProfiles/{profilePhone} {
+      allow read: if signedInWithPhone();
+      allow create, update: if signedInWithPhone()
+        && profilePhone == phone()
+        && validUpiProfile(request.resource.data);
+      allow delete: if signedInWithPhone() && profilePhone == phone();
     }
 
     match /ledgerEntries/{entryId} {
@@ -1249,10 +1274,6 @@ service cloud.firestore {
       match /contacts/{contactId} {
         allow read: if ownsSplit(splitId);
         allow create, update, delete: if ownsSplitAfterWrite(splitId);
-      }
-
-      match /payments/{paymentId} {
-        allow read, write: if false;
       }
     }
 

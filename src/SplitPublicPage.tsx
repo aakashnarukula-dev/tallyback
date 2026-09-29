@@ -1,32 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, LoaderCircle, Share2, ShieldCheck, UsersRound } from 'lucide-react'
-import { SplitPage, SplitRecipient, subscribePublicSplit } from './firebase-splits'
+import { SplitPage, subscribePublicSplit } from './firebase-splits'
 import { money } from './currency'
-
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void }
-  }
-}
-
-const apiBase = String(import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
-
-async function loadRazorpay() {
-  if (window.Razorpay) return true
-  return new Promise<boolean>((resolve) => {
-    const script = document.createElement('script')
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js'
-    script.onload = () => resolve(true)
-    script.onerror = () => resolve(false)
-    document.head.appendChild(script)
-  })
-}
+import { buildUpiPaymentLink } from './upi'
 
 export default function SplitPublicPage({ splitId }: { splitId: string }) {
   const [page, setPage] = useState<SplitPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [payingId, setPayingId] = useState('')
   const [notice, setNotice] = useState('')
 
   useEffect(() => subscribePublicSplit(splitId, (nextPage) => {
@@ -50,58 +31,6 @@ export default function SplitPublicPage({ splitId }: { splitId: string }) {
       setNotice(nativeShare ? 'Shared.' : 'Link copied.')
     } catch (shareError) {
       if ((shareError as Error).name !== 'AbortError') setNotice('Could not share this link.')
-    }
-  }
-
-  async function pay(recipient: SplitRecipient) {
-    if (!apiBase) {
-      setNotice('Online payments are not configured yet. Ask the organizer to record your payment.')
-      return
-    }
-    setPayingId(recipient.id)
-    setNotice('')
-    try {
-      const response = await fetch(`${apiBase}/api/split-payment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ splitId, recipientId: recipient.id }),
-      })
-      const order = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(order.error || 'payment_unavailable')
-      if (!(await loadRazorpay()) || !window.Razorpay) throw new Error('checkout_unavailable')
-
-      const checkout = new window.Razorpay({
-        key: order.keyId,
-        amount: order.amount,
-        currency: 'INR',
-        name: page?.title || 'TallyBack split',
-        description: `${recipient.name}'s share`,
-        order_id: order.orderId,
-        prefill: order.prefillContact ? { name: recipient.name, contact: order.prefillContact } : { name: recipient.name },
-        theme: { color: '#5b5ce2' },
-        handler: async (payment: Record<string, string>) => {
-          try {
-            setNotice('Confirming your payment…')
-            const verify = await fetch(`${apiBase}/api/split-payment/verify`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...payment, splitId, recipientId: recipient.id }),
-            })
-            if (!verify.ok) throw new Error('verification_pending')
-            setNotice('Payment confirmed. Your TallyBack balance is settled.')
-          } catch {
-            setNotice('Payment was received and is being confirmed. Please do not pay again.')
-          } finally {
-            setPayingId('')
-          }
-        },
-        modal: { ondismiss: () => setPayingId('') },
-      })
-      checkout.open()
-    } catch (paymentError) {
-      const message = (paymentError as Error).message
-      setNotice(message === 'already_paid' ? 'This share is already paid.' : 'Payment could not be opened. Please try again.')
-      setPayingId('')
     }
   }
 
@@ -143,15 +72,24 @@ export default function SplitPublicPage({ splitId }: { splitId: string }) {
             <div className="split-person-symbol">{recipient.status === 'paid' ? <Check size={18} /> : recipient.name.slice(0, 1).toUpperCase()}</div>
             <div><strong>{recipient.name}</strong><span>{recipient.status === 'paid' ? 'Payment complete' : 'Payment pending'}</span></div>
             <b>{money.format(recipient.amount)}</b>
-            <button type="button" disabled={recipient.status === 'paid' || Boolean(payingId)} onClick={() => pay(recipient)}>
-              {recipient.status === 'paid' ? 'Paid' : payingId === recipient.id ? 'Opening…' : 'Pay now'}
-            </button>
+            {recipient.status === 'paid'
+              ? <button type="button" disabled>Paid</button>
+              : page.ownerUpiId
+                ? <a className="split-public-pay" href={buildUpiPaymentLink({
+                  upiId: page.ownerUpiId,
+                  payeeName: page.ownerName,
+                  amount: recipient.amount,
+                  note: `TallyBack ${page.title}`,
+                })}>Pay via UPI</a>
+                : null}
           </article>
         ))}
       </section>
 
       {notice && <p className="split-public-notice" role="status">{notice}</p>}
-      <p className="split-public-trust"><ShieldCheck size={16} /> Contact numbers are private. Payments are processed securely by Razorpay.</p>
+      <p className="split-public-trust"><ShieldCheck size={16} /> Contact numbers are private. {page.ownerUpiId
+        ? `Payments go straight to ${page.ownerName || 'the organizer'} over UPI with no fees. They mark your share paid once it arrives.`
+        : `Pay ${page.ownerName || 'the organizer'} directly. They mark your share paid once it arrives.`}</p>
     </main>
   )
 }

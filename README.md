@@ -14,14 +14,15 @@ TallyBack is a lightweight shared ledger for money borrowed, lent, and split bet
 - Creator-only due deletion with confirmation and payment-proof cleanup from both ledgers.
 - One private payment screenshot per due or payment, shared only with that entry's participants.
 - Split-payment owner workspace for creating a collection, adding members, copying its public link, and recording offline payments.
-- Public `/split/:id` payment pages with live progress and Razorpay Checkout.
-- Automatic ledger entries for every split member; settling from Dues, successful online payment, or owner-recorded payment settles the same linked split share.
+- Public `/split/:id` payment pages with live progress and a direct UPI payment link to the organizer.
+- Automatic ledger entries for every split member; settling from Dues or an owner-recorded payment settles the same linked split share.
+- Direct UPI payments with no fees: each person can save a UPI ID from the profile menu, and anyone who owes them gets a **Pay via UPI** button (plus a QR code and copyable UPI ID) that opens their UPI app with the amount filled in. Money moves bank to bank; the payer then attaches the UPI screenshot and the receiver approves it.
 
 ## Architecture
 
-The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and Cloud Firestore provide identity and live data. Each user's saved people live under `users/{uid}/contacts`. Firebase Storage keeps payment screenshots private behind participant-only rules. The server-only Truecaller callback, Firebase custom-token minting, and Razorpay signature verification run in the `tallyback-server` Vercel project under the Aakash Vercel account.
+The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and Cloud Firestore provide identity and live data. Each user's saved people live under `users/{uid}/contacts`. Firebase Storage keeps payment screenshots private behind participant-only rules. The server-only Truecaller callback, and Firebase custom-token minting run in the `tallyback-server` Vercel project under the Aakash Vercel account.
 
-Contact numbers are stored under each split's private `contacts` subcollection. The public split document contains only display names, share amounts, and payment status. Firestore rules scope the ledger to participants and the split editor to its owner.
+Contact numbers are stored under each split's private `contacts` subcollection. The public split document contains only display names, share amounts, and payment status. Firestore rules scope the ledger to participants and the split editor to its owner. UPI IDs live in `upiProfiles/{phone}`, which only the owner can write and any signed-in member can read so they can pay that person.
 
 On Android, TallyBack prewarms the Truecaller request while authentication loads. A transparent one-use activation layer then launches the prepared deep link from the first real touch, satisfying Chrome's requirement that external apps open from a user gesture without exposing a separate Truecaller button.
 
@@ -61,24 +62,6 @@ vercel env add TRUECALLER_PARTNER_NAME production
 ```
 
 Redeploy the API after adding the key. Truecaller mobile-web verification runs on Android; other devices use the SMS path.
-
-### Razorpay
-
-Add the merchant credentials to the production Vercel project:
-
-```bash
-vercel env add RAZORPAY_KEY_ID production
-vercel env add RAZORPAY_KEY_SECRET production
-vercel env add RAZORPAY_WEBHOOK_SECRET production
-```
-
-Create a Razorpay webhook for `payment.captured` and `order.paid` at:
-
-```text
-https://tallyback-server.vercel.app/api/razorpay-webhook
-```
-
-Use the same webhook secret in Razorpay and Vercel, then redeploy the API.
 
 ## Verification and deployment
 
