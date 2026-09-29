@@ -65,6 +65,13 @@ Redeploy the API after adding the key. Truecaller mobile-web verification runs o
 
 ## Verification and deployment
 
+Every push to `main` runs lint, typecheck, unit tests and the Firestore rules tests in GitHub Actions (`.github/workflows/deploy.yml`), then deploys the Firestore rules, Storage rules and site to Firebase. Pull requests run the checks only. The deploy job needs these repository secrets and skips with a warning until they exist:
+
+- `FIREBASE_SERVICE_ACCOUNT_TALLY_BACK`: a service account JSON key for `tally-back` (`firebase init hosting:github` creates one) with the **Firebase Admin** role so it can publish rules as well as hosting.
+- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`: the same values as `.env.local`.
+
+To deploy by hand:
+
 ```bash
 npm run build
 firebase deploy --project tally-back --only firestore:rules,storage,hosting
