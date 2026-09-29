@@ -48,6 +48,26 @@ export async function saveUserProfile(uid: string, person: Person) {
   )
 }
 
+export async function getUpiId(phone: string): Promise<string | null> {
+  const snapshot = await getDoc(doc(requireDatabase(), 'upiProfiles', toE164(phone)))
+  if (!snapshot.exists()) return null
+  const upiId = snapshot.data().upiId
+  return typeof upiId === 'string' && upiId ? upiId : null
+}
+
+export async function saveUpiId(phone: string, upiId: string | null) {
+  const profileRef = doc(requireDatabase(), 'upiProfiles', toE164(phone))
+  if (!upiId) {
+    await deleteDoc(profileRef)
+    return
+  }
+  await setDoc(profileRef, {
+    upiId,
+    phone: toE164(phone),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export function subscribeToEntries(
   phone: string,
   onEntries: (entries: LedgerEntry[]) => void,
