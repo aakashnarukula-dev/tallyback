@@ -14,7 +14,7 @@ import {
 import { activityDocument } from './firebase-activity'
 import { LedgerEntry, normalizePhone, Person } from './data'
 import { db } from './firebase'
-import { toE164 } from './firebase-ledger'
+import { getUpiId, toE164 } from './firebase-ledger'
 import { entryOriginalAmount, entryPaidAmount } from './ledger-calculations'
 
 export type SplitRecipient = {
@@ -40,6 +40,7 @@ export type SplitPage = {
   currency: 'INR'
   ownerUid: string
   ownerName: string
+  ownerUpiId?: string
   recipients: SplitRecipient[]
   totalAmount: number
   createdAt?: unknown
@@ -48,7 +49,7 @@ export type SplitPage = {
 
 export type SplitDraftRecipient = SplitRecipient & { phone: string }
 
-export type SplitDraft = Omit<SplitPage, 'id' | 'ownerUid' | 'ownerName' | 'currency' | 'totalAmount' | 'recipients'> & {
+export type SplitDraft = Omit<SplitPage, 'id' | 'ownerUid' | 'ownerName' | 'ownerUpiId' | 'currency' | 'totalAmount' | 'recipients'> & {
   id?: string
   recipients: SplitDraftRecipient[]
 }
@@ -116,7 +117,7 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
   const database = requireDatabase()
   const splitId = draft.id || createSplitId(title)
   const pageRef = doc(database, 'splitPages', splitId)
-  const existingSnapshot = await getDoc(pageRef)
+  const [existingSnapshot, ownerUpiId] = await Promise.all([getDoc(pageRef), getUpiId(owner.phone)])
   const existingPage = existingSnapshot.exists() ? existingSnapshot.data() as SplitPage : null
   const existingRecipients = new Map((existingPage?.recipients || []).map((row) => [row.id, row]))
   const nextRecipients: SplitRecipient[] = recipients.map((row) => {
@@ -149,6 +150,7 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
     currency: 'INR',
     ownerUid: uid,
     ownerName: owner.name,
+    ownerUpiId: ownerUpiId || deleteField(),
     recipients: nextRecipients,
     totalAmount: nextRecipients.reduce((sum, row) => sum + row.amount, 0),
     updatedAt: serverTimestamp(),

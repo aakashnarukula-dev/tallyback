@@ -57,7 +57,9 @@ import { auth, isFirebaseConfigured } from './firebase'
 import {
   createEntry as createFirebaseEntry,
   deleteEntry as deleteFirebaseEntry,
+  getUpiId,
   getUserProfile,
+  saveUpiId,
   saveUserProfile,
   subscribeToEntries,
   syncParticipantName,
@@ -112,6 +114,8 @@ import {
   sortLedgerEntriesOldestFirst,
 } from './ledger-calculations'
 import { money } from './currency'
+import { UpiPayPanel } from './UpiPayPanel'
+import { isValidUpiId, normalizeUpiId } from './upi'
 
 type Direction = 'receivable' | 'payable'
 type View = 'ledger' | 'activity' | 'splits'
@@ -1632,11 +1636,13 @@ function PaymentScreenshotGallery({
 export function RepaymentModal({
   entry,
   mode,
+  payeeUpiId,
   onClose,
   onSend,
 }: {
   entry: LedgerEntry
   mode: 'request' | 'record'
+  payeeUpiId?: string | null
   onClose: () => void
   onSend: (draft: RepaymentSubmissionDraft) => Promise<void>
 }) {
@@ -1883,6 +1889,15 @@ export function RepaymentModal({
           <div><span>{entry.occasion}</span><small>Remaining due</small></div>
           <strong>{money.format(remainingDue)}</strong>
         </div>
+
+        {mode === 'request' ? (
+          <UpiPayPanel
+            upiId={payeeUpiId}
+            payeeName={entry.lender.name}
+            amount={Number(amount) <= remainingDue && hasValidMoneyPrecision(Number(amount)) ? Number(amount) : 0}
+            note={`TallyBack ${entry.occasion}`}
+          />
+        ) : null}
 
         <form onSubmit={submit}>
           <div className="repayment-fields">
@@ -2142,6 +2157,87 @@ function ReviewRequestModal({
           <div className="modal-actions">
             <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Cancel</button>
             <button className="primary-button" type="submit" disabled={working}>{working ? 'Sending…' : 'Send for review'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+export function UpiIdModal({
+  currentUpiId,
+  onClose,
+  onSave,
+}: {
+  currentUpiId: string | null
+  onClose: () => void
+  onSave: (upiId: string | null) => Promise<void>
+}) {
+  const [value, setValue] = useState(currentUpiId ?? '')
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+
+  useBrowserBackDismiss(() => {
+    if (!working) onClose()
+  })
+  useEscapeDismiss(onClose, working)
+
+  async function save(upiId: string | null) {
+    try {
+      setWorking(true)
+      setError('')
+      await onSave(upiId)
+      onClose()
+    } catch (saveError) {
+      setError(actionableFirebaseError(saveError, 'UPI ID could not be saved. Check connection and retry.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    const upiId = normalizeUpiId(value)
+    if (!isValidUpiId(upiId)) {
+      setError('Enter a UPI ID like name@okhdfcbank.')
+      return
+    }
+    void save(upiId)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose() }}>
+      <section className="modal-card upi-id-modal" role="dialog" aria-modal="true" aria-labelledby="upi-id-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2 id="upi-id-title">Your UPI ID</h2>
+            <p>Friends who owe you can pay it straight from any UPI app. No fees.</p>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={working}>
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <label className="upi-id-field">
+            UPI ID
+            <input
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="name@okhdfcbank"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="email"
+              maxLength={100}
+              disabled={working}
+            />
+          </label>
+          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          <div className="modal-actions">
+            {currentUpiId
+              ? <button className="secondary-button" type="button" onClick={() => void save(null)} disabled={working}>Remove</button>
+              : <button className="secondary-button" type="button" onClick={onClose} disabled={working}>Cancel</button>}
+            <button className="primary-button" type="submit" disabled={working}>{working ? 'Saving…' : 'Save UPI ID'}</button>
           </div>
         </form>
       </section>
@@ -2991,6 +3087,9 @@ function TallyBackApp() {
   const [reviewIntent, setReviewIntent] = useState<LedgerEntry | null>(null)
   const [reviewRecords, setReviewRecords] = useState<LedgerReviewRecord[]>([])
   const [repaymentIntent, setRepaymentIntent] = useState<{ entry: LedgerEntry; mode: 'request' | 'record' } | null>(null)
+  const [repaymentPayeeUpi, setRepaymentPayeeUpi] = useState<{ phone: string; upiId: string | null } | null>(null)
+  const [myUpiId, setMyUpiId] = useState<string | null | undefined>(undefined)
+  const [upiIdModalOpen, setUpiIdModalOpen] = useState(false)
   const [repaymentRequests, setRepaymentRequests] = useState<RepaymentRequest[]>([])
   const [activities, setActivities] = useState<LedgerActivity[]>([])
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<LedgerEntry | null>(null)
@@ -3213,6 +3312,34 @@ function TallyBackApp() {
       (error) => console.error('[reviews/listener]', error),
     )
   }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser?.phone || !auth?.currentUser || !isFirebaseConfigured) {
+      setMyUpiId(undefined)
+      return
+    }
+    let cancelled = false
+    getUpiId(currentUser.phone)
+      .then((upiId) => { if (!cancelled) setMyUpiId(upiId) })
+      .catch((error) => {
+        console.error('[upi/profile]', error)
+        if (!cancelled) setMyUpiId(null)
+      })
+    return () => { cancelled = true }
+  }, [currentUser?.phone])
+
+  useEffect(() => {
+    if (repaymentIntent?.mode !== 'request') return
+    const lenderPhone = repaymentIntent.entry.lender.phone
+    let cancelled = false
+    getUpiId(lenderPhone)
+      .then((upiId) => { if (!cancelled) setRepaymentPayeeUpi({ phone: lenderPhone, upiId }) })
+      .catch((error) => {
+        console.error('[upi/payee]', error)
+        if (!cancelled) setRepaymentPayeeUpi({ phone: lenderPhone, upiId: null })
+      })
+    return () => { cancelled = true }
+  }, [repaymentIntent])
 
   useEffect(() => {
     if (!toast) return
@@ -3820,6 +3947,10 @@ function TallyBackApp() {
               {profileOpen && (
                 <div className="profile-menu">
                   <div><strong>{currentUser.name}</strong><span>{formatPhone(currentUser.phone)}</span></div>
+                  <button onClick={() => { setProfileOpen(false); setUpiIdModalOpen(true) }} disabled={myUpiId === undefined}>
+                    <Smartphone size={16} />
+                    <span className="profile-upi-label">{myUpiId ? <>UPI ID <small>{myUpiId}</small></> : 'Add UPI ID'}</span>
+                  </button>
                   <button onClick={logout}><LogOut size={16} /> Sign out</button>
                 </div>
               )}
@@ -4109,10 +4240,20 @@ function TallyBackApp() {
       {repaymentIntent ? <RepaymentModal
         entry={repaymentIntent.entry}
         mode={repaymentIntent.mode}
+        payeeUpiId={repaymentPayeeUpi?.phone === repaymentIntent.entry.lender.phone ? repaymentPayeeUpi.upiId : undefined}
         onClose={() => setRepaymentIntent(null)}
         onSend={(draft) => repaymentIntent.mode === 'record'
           ? saveLenderPayment(repaymentIntent.entry, draft)
           : sendRepayment(repaymentIntent.entry, draft)}
+      /> : null}
+      {upiIdModalOpen && myUpiId !== undefined ? <UpiIdModal
+        currentUpiId={myUpiId}
+        onClose={() => setUpiIdModalOpen(false)}
+        onSave={async (upiId) => {
+          await saveUpiId(currentUser.phone, upiId)
+          setMyUpiId(upiId)
+          setToast(upiId ? 'UPI ID saved.' : 'UPI ID removed.')
+        }}
       /> : null}
       {deleteEntryTarget ? <DeleteDueModal entry={deleteEntryTarget} onClose={() => setDeleteEntryTarget(null)} onDelete={deleteDue} /> : null}
       {deleteContactTarget ? <DeleteContactModal person={deleteContactTarget} onClose={() => setDeleteContactTarget(null)} onDelete={deleteContact} /> : null}
