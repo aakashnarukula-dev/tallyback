@@ -982,6 +982,61 @@ try {
   await assertSucceeds(getDoc(doc(testEnvironment.unauthenticatedContext().firestore(), 'splitPages', splitId)))
   await assertFails(getDoc(doc(borrowerDatabase, 'splitPages', splitId, 'contacts', splitRecipientId)))
 
+  // Reading the entry of a member who has no due yet (added by name only) is
+  // refused, not returned empty, so saveSplitPage must treat it as missing.
+  await assertFails(getDoc(doc(lenderDatabase, 'ledgerEntries', `split-${splitId}-member-nophone00000`)))
+
+  // Editing that split: the owner adds their own paid share, a name-only member
+  // is listed with no due, and the pending due is rewritten in full on merge.
+  const ownerRecipientId = 'member-owner0000000'
+  const editSplit = writeBatch(lenderDatabase)
+  editSplit.set(doc(lenderDatabase, 'splitPages', splitId), {
+    title: 'Rules test split',
+    description: '',
+    active: true,
+    currency: 'INR',
+    ownerUid: lenderUid,
+    ownerName: lender.name,
+    recipients: [
+      { id: ownerRecipientId, name: lender.name, amount: 500, status: 'paid', paidAt: '2026-10-01T00:00:00.000Z' },
+      { id: splitRecipientId, name: borrower.name, amount: 500, status: 'pending', ledgerEntryId: splitEntryId },
+      { id: 'member-nophone00000', name: 'No number yet', amount: 500, status: 'pending' },
+    ],
+    totalAmount: 1500,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+  editSplit.set(doc(lenderDatabase, 'splitPages', splitId, 'contacts', ownerRecipientId), {
+    recipientId: ownerRecipientId,
+    name: lender.name,
+    phone: lenderPhone,
+    updatedAt: serverTimestamp(),
+  })
+  editSplit.set(doc(lenderDatabase, 'ledgerEntries', splitEntryId), {
+    lender,
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 500,
+    originalAmount: 500,
+    paidAmount: 0,
+    remainingAmount: 500,
+    occasion: 'Rules test split',
+    method: 'Personal funds',
+    date: '2026-10-02',
+    status: 'open',
+    createdBy: lenderUid,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+  editSplit.set(doc(lenderDatabase, 'ledgerActivities', 'split-due-edited'), {
+    ...activity('due_edited', lenderUid, lenderPhone, lender.name, 'open', 500),
+    dueId: splitEntryId,
+    sourceId: splitEntryId,
+    method: 'Personal funds',
+    eventDate: '2026-10-02',
+  })
+  await assertSucceeds(editSplit.commit())
+
   console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, source-bound activity, immutable proof, immutable identities, owner-only UPI IDs, and private proof access passed.')
 } finally {
   await testEnvironment.cleanup()

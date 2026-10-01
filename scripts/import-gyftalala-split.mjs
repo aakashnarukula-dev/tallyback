@@ -145,7 +145,7 @@ const recipients = rows.map((row) => {
     amount: row.amount,
     status: row.paid ? 'paid' : 'pending',
     ...(row.paid ? { paidAt: row.paidAt || createdAtIso } : {}),
-    ...(row.owner ? {} : { ledgerEntryId: ledgerId(id) }),
+    ...(row.owner || !row.phone ? {} : { ledgerEntryId: ledgerId(id) }),
   }
 })
 // Keep Gyftalala's order; anyone TallyBack has that Gyftalala doesn't stays last.
