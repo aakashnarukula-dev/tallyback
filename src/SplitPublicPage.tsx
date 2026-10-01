@@ -57,7 +57,6 @@ export default function SplitPublicPage({ splitId }: { splitId: string }) {
       </header>
 
       <section className="split-public-hero">
-        <p>Shared by {page.ownerName || 'a friend'}</p>
         <h1>{page.title}</h1>
         {page.description && <span>{page.description}</span>}
         <div className="split-progress-card">
