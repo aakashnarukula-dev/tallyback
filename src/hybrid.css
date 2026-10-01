@@ -2352,3 +2352,9 @@ body:has(.ledger-view-shell) #root {
     display: none;
   }
 }
+
+.split-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

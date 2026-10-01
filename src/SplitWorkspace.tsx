@@ -253,7 +253,13 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
                 )
               })}
             </div>
-            <button className="split-add-member" type="button" onClick={() => setDraft((current) => ({ ...current, recipients: [...current.recipients, newRecipient()] }))}><Plus size={16} /> Add person</button>
+            <div className="split-add-row">
+              <button className="split-add-member" type="button" onClick={() => setDraft((current) => ({ ...current, recipients: [...current.recipients, newRecipient()] }))}><Plus size={16} /> Add person</button>
+              {/* Splits made before the owner was listed have no row for them. */}
+              {!draft.recipients.some((row) => row.phone && normalizePhone(row.phone) === ownerPhone) && (
+                <button className="split-add-member" type="button" onClick={() => setDraft((current) => ({ ...current, recipients: [{ ...newRecipient(), name: currentUser.name, phone: ownerPhone, status: 'paid' }, ...current.recipients] }))}><Plus size={16} /> Add your share</button>
+              )}
+            </div>
           </div>
 
           {selectedId && <p className="split-link-note"><Link2 size={15} /> tally-back.web.app/split/{selectedId}</p>}
