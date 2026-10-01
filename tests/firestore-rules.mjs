@@ -928,6 +928,60 @@ try {
   await assertFails(getMetadata(storageRef(strangerStorage, lenderProofPath)))
   await assertSucceeds(deleteObject(storageRef(lenderStorage, lenderProofPath)))
 
+  // The write saveSplitPage makes for a brand-new split: the page, a private
+  // contact, and an open due with its creation activity, in one batch.
+  const splitId = 'rules-test-split'
+  const splitRecipientId = 'member-abc123abc123'
+  const splitEntryId = `split-${splitId}-${splitRecipientId}`
+  const createSplit = writeBatch(lenderDatabase)
+  createSplit.set(doc(lenderDatabase, 'splitPages', splitId), {
+    title: 'Rules test split',
+    description: '',
+    active: true,
+    currency: 'INR',
+    ownerUid: lenderUid,
+    ownerName: lender.name,
+    recipients: [{ id: splitRecipientId, name: borrower.name, amount: 500, status: 'pending', ledgerEntryId: splitEntryId }],
+    totalAmount: 500,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+  createSplit.set(doc(lenderDatabase, 'splitPages', splitId, 'contacts', splitRecipientId), {
+    recipientId: splitRecipientId,
+    name: borrower.name,
+    phone: borrowerPhone,
+    updatedAt: serverTimestamp(),
+  })
+  createSplit.set(doc(lenderDatabase, 'ledgerEntries', splitEntryId), {
+    lender,
+    borrower,
+    lenderPhone,
+    borrowerPhone,
+    participantPhones: [lenderPhone, borrowerPhone],
+    amount: 500,
+    originalAmount: 500,
+    paidAmount: 0,
+    remainingAmount: 500,
+    occasion: 'Rules test split',
+    method: 'Personal funds',
+    date: '2026-10-01',
+    status: 'open',
+    historyStarted: false,
+    createdBy: lenderUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: false })
+  createSplit.set(doc(lenderDatabase, 'ledgerActivities', 'split-due-created'), {
+    ...activity('due_created', lenderUid, lenderPhone, lender.name, 'open', 500),
+    dueId: splitEntryId,
+    sourceId: splitEntryId,
+    method: 'Personal funds',
+    eventDate: '2026-10-01',
+  })
+  await assertSucceeds(createSplit.commit())
+  await assertSucceeds(getDoc(doc(testEnvironment.unauthenticatedContext().firestore(), 'splitPages', splitId)))
+  await assertFails(getDoc(doc(borrowerDatabase, 'splitPages', splitId, 'contacts', splitRecipientId)))
+
   console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, source-bound activity, immutable proof, immutable identities, owner-only UPI IDs, and private proof access passed.')
 } finally {
   await testEnvironment.cleanup()
