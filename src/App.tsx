@@ -2736,20 +2736,27 @@ export function UpiIdModal({
           </button>
         </div>
         <form onSubmit={submit}>
-          <label className="upi-id-field">
-            UPI ID
-            <input
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              placeholder="name@okhdfcbank"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              inputMode="email"
-              maxLength={100}
-              disabled={working}
-            />
-          </label>
+          <div className="upi-id-field">
+            <label htmlFor="upi-id-input">UPI ID</label>
+            <span className={`upi-id-input${isValidUpiId(normalizeUpiId(value)) ? ' valid' : ''}`}>
+              <span className="upi-id-input-icon" aria-hidden="true"><Smartphone size={16} /></span>
+              <input
+                id="upi-id-input"
+                aria-describedby="upi-id-hint"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                placeholder="name@okhdfcbank"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="email"
+                maxLength={100}
+                disabled={working}
+              />
+              {isValidUpiId(normalizeUpiId(value)) ? <CheckCircle2 className="upi-id-input-check" size={17} aria-hidden="true" /> : null}
+            </span>
+            <small id="upi-id-hint">Find it in your UPI app's profile, like name@okhdfcbank or 9876543210@ybl.</small>
+          </div>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
           <div className="modal-actions">
             {currentUpiId
