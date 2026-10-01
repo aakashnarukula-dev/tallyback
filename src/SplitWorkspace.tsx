@@ -10,7 +10,7 @@ import {
   Save,
   Trash2,
 } from 'lucide-react'
-import { Person } from './data'
+import { normalizePhone, Person } from './data'
 import { money } from './currency'
 import {
   markSplitRecipientPaid,
@@ -24,11 +24,15 @@ import {
 } from './firebase-splits'
 import { auth } from './firebase'
 
-const blankDraft = (): SplitDraft => ({
+// A split is the whole group's cost, so a new one starts with the owner's own
+// share, already paid, and the people they are collecting from below it.
+const blankDraft = (owner?: Person): SplitDraft => ({
   title: '',
   description: '',
   active: true,
-  recipients: [newRecipient()],
+  recipients: owner
+    ? [{ ...newRecipient(), name: owner.name, phone: normalizePhone(owner.phone), status: 'paid' }, newRecipient()]
+    : [newRecipient()],
 })
 
 function draftFromPage(page: SplitPage, contacts: Record<string, SplitContact>): SplitDraft {
@@ -78,8 +82,11 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     if (page) setDraft(draftFromPage(page, contacts))
   }, [contacts, pages, selectedId])
 
+  const ownerPhone = normalizePhone(currentUser.phone)
   const total = useMemo(() => draft.recipients.reduce((sum, row) => sum + (Number(row.amount) || 0), 0), [draft.recipients])
-  const paid = useMemo(() => draft.recipients.filter((row) => row.status === 'paid').reduce((sum, row) => sum + Number(row.amount || 0), 0), [draft.recipients])
+  const paid = useMemo(() => draft.recipients
+    .filter((row) => row.status === 'paid' || (row.phone && normalizePhone(row.phone) === ownerPhone))
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0), [draft.recipients, ownerPhone])
 
   function selectPage(page: SplitPage) {
     setCreating(false)
@@ -92,7 +99,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     setCreating(true)
     setSelectedId('')
     setContacts({})
-    setDraft(blankDraft())
+    setDraft(blankDraft(currentUser))
   }
 
   function closeEditor() {
@@ -119,7 +126,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
       const id = await saveSplitPage(draft, auth.currentUser.uid, currentUser)
       setSelectedId(id)
       setCreating(false)
-      onNotice('Split saved. Every member now has a matching ledger entry.')
+      onNotice('Split saved. Everyone with a number now has a matching ledger entry.')
     } catch (error) {
       onNotice((error as Error).message || 'Could not save this split.')
     } finally {
@@ -127,12 +134,12 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     }
   }
 
-  async function copyLink() {
-    if (!selectedId) {
+  async function copyLink(splitId = selectedId) {
+    if (!splitId) {
       onNotice('Save the split before copying its link.')
       return
     }
-    const url = `${window.location.origin}/split/${selectedId}`
+    const url = `${window.location.origin}/split/${splitId}`
     try {
       await navigator.clipboard.writeText(url)
       onNotice('Public payment link copied.')
@@ -157,14 +164,29 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
         {pages.length > 0 ? (
           <aside className="split-list-panel">
             <div className="split-list-title"><strong>Your splits</strong><span>{pages.length}</span></div>
-            <div className="split-list">
+            <div className="split-card-list">
               {pages.map((page) => {
-                const paidCount = page.recipients.filter((row) => row.status === 'paid').length
+                const paidRows = page.recipients.filter((row) => row.status === 'paid')
+                const paidAmount = paidRows.reduce((sum, row) => sum + row.amount, 0)
+                const progress = page.totalAmount > 0 ? Math.min(100, Math.round((paidAmount / page.totalAmount) * 100)) : 0
                 return (
-                  <button type="button" key={page.id} className={selectedId === page.id ? 'active' : ''} onClick={() => selectPage(page)}>
-                    <span><strong>{page.title}</strong><small>{paidCount}/{page.recipients.length} paid</small></span>
-                    <em className={page.active ? 'live' : ''}>{page.active ? 'Live' : 'Paused'}</em>
-                  </button>
+                  <article key={page.id} className={`split-card ${selectedId === page.id ? 'active' : ''}`}>
+                    <button type="button" className="split-card-open" onClick={() => selectPage(page)} aria-label={`Open ${page.title}`}>
+                      <span className="split-card-head">
+                        <strong>{page.title}</strong>
+                        <em className={page.active ? 'live' : ''}>{page.active ? 'Live' : 'Paused'}</em>
+                      </span>
+                      <span className="split-card-amounts">
+                        <span>{money.format(paidAmount)} <small>of {money.format(page.totalAmount)}</small></span>
+                        <small>{paidRows.length} of {page.recipients.length} paid</small>
+                      </span>
+                      <span className="split-card-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span>
+                    </button>
+                    <div className="split-card-actions">
+                      <button type="button" onClick={() => copyLink(page.id)}><Copy size={14} /> Copy link</button>
+                      <a href={`/split/${page.id}`} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Preview</a>
+                    </div>
+                  </article>
                 )
               })}
             </div>
@@ -180,22 +202,24 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
               <button className="split-editor-back" type="button" onClick={closeEditor} aria-label="Close split editor"><ArrowLeft size={20} /></button>
               <span><small>{creating ? 'New split' : 'Edit split'}</small><strong>{draft.title || 'Untitled split'}</strong></span>
             </div>
-            <button className="primary-button split-save-button" type="submit" disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save'}</button>
-          </header>
-
-          {selectedId ? (
-            <div className="split-editor-secondary-actions">
-              <button className="secondary-button" type="button" onClick={copyLink}><Copy size={15} /> Copy link</button>
-              <a className="secondary-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Preview</a>
+            <div className="split-editor-actions">
+              <label className={`split-live-switch ${draft.active ? 'on' : ''}`} title={draft.active ? 'People can pay through the link' : 'The link is paused'}>
+                <input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} />
+                <span className="split-live-switch-track" aria-hidden="true"><span /></span>
+                <span>{draft.active ? 'Live' : 'Paused'}</span>
+              </label>
+              {selectedId ? (
+                <>
+                  <button className="split-icon-button" type="button" onClick={() => copyLink()} aria-label="Copy link" title="Copy link"><Copy size={16} /><span>Copy link</span></button>
+                  <a className="split-icon-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer" aria-label="Preview" title="Preview"><ExternalLink size={16} /><span>Preview</span></a>
+                </>
+              ) : null}
+              <button className="primary-button split-save-button" type="submit" disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save'}</button>
             </div>
-          ) : null}
+          </header>
 
           <div className="split-form-card split-basics-card">
             <label>Split title<input required value={draft.title} maxLength={100} placeholder="Goa trip" onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
-            <label className="split-live-toggle">
-              <input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} />
-              <span><strong>{draft.active ? 'Payment link is live' : 'Payment link is paused'}</strong></span>
-            </label>
             <label className="split-note-field">Short note<textarea value={draft.description} maxLength={280} placeholder="What is everyone contributing towards?" onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></label>
           </div>
 
@@ -205,27 +229,37 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
               <div><span>{money.format(paid)} collected</span><strong>{money.format(total)} total</strong></div>
             </div>
 
-            <div className="split-member-labels"><span>Name</span><span>Mobile number</span><span>Share</span><span>Status</span></div>
-            <div className="split-members">
-              {draft.recipients.map((row) => (
-                <div className="split-member-row" key={row.id}>
-                  <input aria-label="Member name" required value={row.name} placeholder="Surya" onChange={(event) => updateRecipient(row.id, 'name', event.target.value)} />
-                  <div className="split-member-phone"><span>+91</span><input aria-label="Member mobile number" required inputMode="numeric" value={row.phone.replace(/^\+91/, '')} placeholder="9876543210" onChange={(event) => updateRecipient(row.id, 'phone', event.target.value.replace(/\D/g, '').slice(-10))} /></div>
+            <div className="split-people">
+              {draft.recipients.map((row) => {
+                const isYou = Boolean(row.phone) && normalizePhone(row.phone) === ownerPhone
+                return (
+                <div className="split-person" key={row.id}>
+                  <input className="split-person-name" aria-label="Member name" required value={row.name} placeholder="Surya" onChange={(event) => updateRecipient(row.id, 'name', event.target.value)} />
+                  <div className="split-member-phone"><span>+91</span><input aria-label="Member mobile number" inputMode="numeric" pattern="[0-9]{10}" value={row.phone.replace(/^\+91/, '')} placeholder="Add later" onChange={(event) => updateRecipient(row.id, 'phone', event.target.value.replace(/\D/g, '').slice(-10))} /></div>
                   <div className="split-member-amount"><span>₹</span><input aria-label="Share amount" required type="number" min="1" max="100000" step="0.01" value={row.amount || ''} placeholder="0" onChange={(event) => updateRecipient(row.id, 'amount', event.target.value)} /></div>
-                  <div className="split-member-actions">
-                    {row.status === 'paid'
+                  <div className="split-person-actions">
+                    {isYou
+                      ? <span className="split-paid-pill"><Check size={13} /> You · Paid</span>
+                      : row.status === 'paid'
                       ? <span className="split-paid-pill"><Check size={13} /> Paid</span>
                       : selectedId
                         ? <button className="split-mark-button" type="button" onClick={() => markPaid(row.id)}><CheckCircle2 size={14} /> Mark as paid</button>
                         : <span className="split-pending-pill">Pending</span>}
-                    {row.status !== 'paid' && draft.recipients.length > 1 && (
+                    {row.status !== 'paid' && !isYou && draft.recipients.length > 1 && (
                       <button className="split-remove-button" type="button" aria-label={`Remove ${row.name || 'member'}`} onClick={() => setDraft((current) => ({ ...current, recipients: current.recipients.filter((item) => item.id !== row.id) }))}><Trash2 size={15} /></button>
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
-            <button className="split-add-member" type="button" onClick={() => setDraft((current) => ({ ...current, recipients: [...current.recipients, newRecipient()] }))}><Plus size={16} /> Add person</button>
+            <div className="split-add-row">
+              <button className="split-add-member" type="button" onClick={() => setDraft((current) => ({ ...current, recipients: [...current.recipients, newRecipient()] }))}><Plus size={16} /> Add person</button>
+              {/* Splits made before the owner was listed have no row for them. */}
+              {!draft.recipients.some((row) => row.phone && normalizePhone(row.phone) === ownerPhone) && (
+                <button className="split-add-member" type="button" onClick={() => setDraft((current) => ({ ...current, recipients: [{ ...newRecipient(), name: currentUser.name, phone: ownerPhone, status: 'paid' }, ...current.recipients] }))}><Plus size={16} /> Add your share</button>
+              )}
+            </div>
           </div>
 
           {selectedId && <p className="split-link-note"><Link2 size={15} /> tally-back.web.app/split/{selectedId}</p>}
