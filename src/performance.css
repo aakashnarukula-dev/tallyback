@@ -1304,10 +1304,77 @@
 
 .upi-id-field {
   display: grid;
-  gap: 6px;
-  margin: 12px 0;
-  font-size: 12px;
+  gap: 7px;
+  margin: 16px 0 14px;
+  color: #596175;
+  font-size: 11px;
   font-weight: 700;
+}
+
+.upi-id-input {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.upi-id-input:focus-within {
+  border-color: #8eb8ae;
+  box-shadow: 0 0 0 4px rgba(57, 121, 108, 0.08) !important;
+}
+
+.upi-id-input-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--indigo-soft);
+  color: var(--indigo-dark);
+}
+
+.upi-id-input input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+.upi-id-input input::placeholder {
+  color: #a6b1ae;
+  font-weight: 500;
+}
+
+.upi-id-input input:focus {
+  outline: none;
+}
+
+.upi-id-input-check {
+  flex: 0 0 auto;
+  color: var(--indigo);
+}
+
+.upi-id-input.valid {
+  border-color: #b7d3cb;
+}
+
+.upi-id-field small {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 550;
 }
 
 .drawer-quick-add.drawer-record-payment {
