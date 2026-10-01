@@ -1752,7 +1752,13 @@ body:has(.ledger-view-shell) #root {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 2px 3px 12px 2px;
+  padding: 2px 3px 32px 2px;
+}
+
+/* The list runs to the bottom edge of the window; the space that keeps the
+   last card clear of the edge (and of the phone tab bar) is inside it. */
+.ledger-view-shell .workspace {
+  padding-bottom: 0;
 }
 
 .pull-refresh-indicator {
@@ -1810,8 +1816,8 @@ body:has(.ledger-view-shell) #root {
     z-index: 30;
   }
 
-  .ledger-view-shell .workspace {
-    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  .ledger-view-shell .contact-ledger-grid {
+    padding-bottom: calc(90px + env(safe-area-inset-bottom));
   }
 }
 
