@@ -24,6 +24,7 @@ import {
   subscribeSplitContacts,
 } from './firebase-splits'
 import { auth } from './firebase'
+import { SkeletonList } from './Skeleton'
 
 // A split is the whole group's cost, so a new one starts with the owner's own
 // share, already paid, and the people they are collecting from below it.
@@ -232,7 +233,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
         ) : null}
 
         {loading ? (
-          <div className="split-launcher"><p>Loading splits…</p></div>
+          <SkeletonList variant="split" count={3} label="Loading splits" />
         ) : creating || selectedId ? (
         <form className="split-editor" onSubmit={save}>
           <header className="split-editor-bar">

@@ -117,6 +117,7 @@ import {
 } from './ledger-calculations'
 import { money } from './currency'
 import { UpiPayPanel } from './UpiPayPanel'
+import { SkeletonBar, SkeletonList } from './Skeleton'
 import { isValidUpiId, normalizeUpiId } from './upi'
 import { splitIdFromEditorPath } from './routes'
 
@@ -3617,8 +3618,9 @@ function TallyBackApp() {
   const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [contacts, setContacts] = useState<SavedContact[]>([])
   const [authLoading, setAuthLoading] = useState(isFirebaseConfigured)
-  const [dataLoading, setDataLoading] = useState(false)
-  const [contactsLoading, setContactsLoading] = useState(false)
+  const [dataLoading, setDataLoading] = useState(true)
+  const [contactsLoading, setContactsLoading] = useState(true)
+  const [activitiesLoading, setActivitiesLoading] = useState(true)
   const [direction, setDirection] = useState<Direction>('receivable')
   const [view, setViewState] = useState<View>(() => viewFromPath(window.location.pathname))
   const [search, setSearch] = useState('')
@@ -3788,11 +3790,15 @@ function TallyBackApp() {
   useEffect(() => {
     if (!currentUser) {
       setEntries([])
+      setDataLoading(false)
       return
     }
 
     const firebaseAuth = auth
-    if (!firebaseAuth?.currentUser || !isFirebaseConfigured) return
+    if (!firebaseAuth?.currentUser || !isFirebaseConfigured) {
+      setDataLoading(false)
+      return
+    }
 
     setDataLoading(true)
     return subscribeToEntries(
@@ -3835,13 +3841,21 @@ function TallyBackApp() {
     const firebaseUser = auth?.currentUser
     if (!currentUser || !firebaseUser || !isFirebaseConfigured) {
       setActivities([])
+      setActivitiesLoading(false)
       return
     }
 
+    setActivitiesLoading(true)
     return subscribeToActivities(
       currentUser.phone,
-      setActivities,
-      (error) => console.error('[activity/listener]', error),
+      (nextActivities) => {
+        setActivities(nextActivities)
+        setActivitiesLoading(false)
+      },
+      (error) => {
+        console.error('[activity/listener]', error)
+        setActivitiesLoading(false)
+      },
     )
   }, [currentUser])
 
@@ -3849,6 +3863,7 @@ function TallyBackApp() {
     const firebaseUser = auth?.currentUser
     if (!currentUser || !firebaseUser || !isFirebaseConfigured) {
       setContacts([])
+      setContactsLoading(false)
       return
     }
 
@@ -3933,6 +3948,8 @@ function TallyBackApp() {
 
   const userPhone = normalizePhone(currentUser?.phone ?? '')
   const ledgerTotals = useMemo(() => outstandingTotals(entries, userPhone), [entries, userPhone])
+  const ledgerLoading = dataLoading || contactsLoading
+  const activityLoading = dataLoading || activitiesLoading
   const relevantEntries = useMemo(() => {
     if (!currentUser) return []
     return entries.filter((entry) =>
@@ -4571,11 +4588,11 @@ function TallyBackApp() {
                 <div className="balance-switch people-balance-switch" role="tablist" aria-label="Choose ledger side">
                   <button role="tab" aria-selected={direction === 'receivable'} className={`receive ${direction === 'receivable' ? 'active' : ''}`} onClick={() => setDirection('receivable')}>
                     <span className="switch-icon"><ArrowDownLeft size={19} /></span>
-                    <span><small>People who owe you</small><strong>{money.format(ledgerTotals.receivable)}</strong></span>
+                    <span><small>People who owe you</small><strong>{ledgerLoading ? <SkeletonBar width={84} height={16} /> : money.format(ledgerTotals.receivable)}</strong></span>
                   </button>
                   <button role="tab" aria-selected={direction === 'payable'} className={`pay ${direction === 'payable' ? 'active' : ''}`} onClick={() => setDirection('payable')}>
                     <span className="switch-icon"><ArrowUpRight size={19} /></span>
-                    <span><small>People you owe</small><strong>{money.format(ledgerTotals.payable)}</strong></span>
+                    <span><small>People you owe</small><strong>{ledgerLoading ? <SkeletonBar width={84} height={16} /> : money.format(ledgerTotals.payable)}</strong></span>
                   </button>
                 </div>
 
@@ -4583,11 +4600,11 @@ function TallyBackApp() {
                   <div className="people-toolbar-summary">
                     <div>
                       <h2>{direction === 'receivable' ? 'People who owe you' : 'People you owe'}</h2>
-                      <p>{allSummaries.length} {allSummaries.length <= 1 ? 'person' : 'people'}</p>
+                      <p>{ledgerLoading ? <SkeletonBar width={52} height={9} /> : `${allSummaries.length} ${allSummaries.length <= 1 ? 'person' : 'people'}`}</p>
                     </div>
                     <div className={`people-toolbar-total ${direction}`}>
                       <span>{direction === 'receivable' ? 'Total to receive' : 'Total to pay'}</span>
-                      <strong>{money.format(direction === 'receivable' ? ledgerTotals.receivable : ledgerTotals.payable)}</strong>
+                      <strong>{ledgerLoading ? <SkeletonBar width={96} height={20} /> : money.format(direction === 'receivable' ? ledgerTotals.receivable : ledgerTotals.payable)}</strong>
                     </div>
                   </div>
                   <div className="people-toolbar-actions">
@@ -4595,7 +4612,7 @@ function TallyBackApp() {
                       <Search size={17} />
                       <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or number" />
                     </label>
-                    {direction === 'receivable' && !dataLoading && !contactsLoading && allSummaries.length > 0 ? (
+                    {direction === 'receivable' && !ledgerLoading && allSummaries.length > 0 ? (
                       <button className="add-person-inline" type="button" onClick={chooseContacts} disabled={importingContacts}>
                         <Contact size={17} />
                         <span>{importingContacts ? 'Opening…' : 'Add person'}</span>
@@ -4620,8 +4637,8 @@ function TallyBackApp() {
                       </span>
                     </div>
                   ) : null}
-                  {(dataLoading || contactsLoading) ? <div className="ledger-loading">Syncing people and dues…</div> : null}
-                  {!dataLoading && !contactsLoading && summaries.map((summary) => {
+                  {ledgerLoading ? <SkeletonList variant="person" label="Syncing people and dues" /> : null}
+                  {!ledgerLoading && summaries.map((summary) => {
                     return (
                       <article className="contact-ledger-card" key={summary.person.phone}>
                         <button className="contact-ledger-main" type="button" onClick={() => setSelectedPhone(normalizePhone(summary.person.phone))}>
@@ -4643,7 +4660,7 @@ function TallyBackApp() {
                       </article>
                     )
                   })}
-                  {!dataLoading && !contactsLoading && summaries.length === 0 ? (
+                  {!ledgerLoading && summaries.length === 0 ? (
                     <div className={`people-empty-state ${!search && direction === 'receivable' ? 'compact' : ''}`}>
                       {search || direction === 'payable' ? <span><Contact size={25} /></span> : null}
                       {search ? (
@@ -4671,14 +4688,15 @@ function TallyBackApp() {
                   <button className={direction === 'payable' ? 'active' : ''} onClick={() => setDirection('payable')}>To pay</button>
                 </div>
                 <div className="activity-list">
-                  {!activityItems.length ? (
+                  {activityLoading ? <SkeletonList variant="activity" label="Loading activity" /> : null}
+                  {!activityLoading && !activityItems.length ? (
                     <div className="activity-empty-state">
                       <History size={22} />
                       <strong>No activity yet</strong>
                       <span>{direction === 'receivable' ? 'New dues and incoming payments appear here.' : 'Payments and review updates appear here.'}</span>
                     </div>
                   ) : null}
-                  {activityItems.map((item) => {
+                  {!activityLoading && activityItems.map((item) => {
                     if (item.kind === 'activity') {
                       const { activity } = item
                       const entry = entries.find((candidate) => candidate.id === activity.dueId)
@@ -4794,7 +4812,7 @@ function TallyBackApp() {
                 </div>
               </section>
             ) : (
-              <Suspense fallback={<div className="ledger-loading">Opening splits…</div>}>
+              <Suspense fallback={<SkeletonList variant="split" count={3} label="Opening splits" />}>
                 <SplitWorkspace currentUser={currentUser} onNotice={setToast} />
               </Suspense>
             )}
