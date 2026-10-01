@@ -202,22 +202,24 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
               <button className="split-editor-back" type="button" onClick={closeEditor} aria-label="Close split editor"><ArrowLeft size={20} /></button>
               <span><small>{creating ? 'New split' : 'Edit split'}</small><strong>{draft.title || 'Untitled split'}</strong></span>
             </div>
-            <button className="primary-button split-save-button" type="submit" disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save'}</button>
-          </header>
-
-          {selectedId ? (
-            <div className="split-editor-secondary-actions">
-              <button className="secondary-button" type="button" onClick={() => copyLink()}><Copy size={15} /> Copy link</button>
-              <a className="secondary-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Preview</a>
+            <div className="split-editor-actions">
+              <label className={`split-live-switch ${draft.active ? 'on' : ''}`} title={draft.active ? 'People can pay through the link' : 'The link is paused'}>
+                <input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} />
+                <span className="split-live-switch-track" aria-hidden="true"><span /></span>
+                <span>{draft.active ? 'Live' : 'Paused'}</span>
+              </label>
+              {selectedId ? (
+                <>
+                  <button className="split-icon-button" type="button" onClick={() => copyLink()} aria-label="Copy link" title="Copy link"><Copy size={16} /><span>Copy link</span></button>
+                  <a className="split-icon-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer" aria-label="Preview" title="Preview"><ExternalLink size={16} /><span>Preview</span></a>
+                </>
+              ) : null}
+              <button className="primary-button split-save-button" type="submit" disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save'}</button>
             </div>
-          ) : null}
+          </header>
 
           <div className="split-form-card split-basics-card">
             <label>Split title<input required value={draft.title} maxLength={100} placeholder="Goa trip" onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
-            <label className="split-live-toggle">
-              <input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} />
-              <span><strong>{draft.active ? 'Payment link is live' : 'Payment link is paused'}</strong></span>
-            </label>
             <label className="split-note-field">Short note<textarea value={draft.description} maxLength={280} placeholder="What is everyone contributing towards?" onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></label>
           </div>
 
@@ -227,16 +229,15 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
               <div><span>{money.format(paid)} collected</span><strong>{money.format(total)} total</strong></div>
             </div>
 
-            <div className="split-member-labels"><span>Name</span><span>Mobile number</span><span>Share</span><span>Status</span></div>
-            <div className="split-members">
+            <div className="split-people">
               {draft.recipients.map((row) => {
                 const isYou = Boolean(row.phone) && normalizePhone(row.phone) === ownerPhone
                 return (
-                <div className="split-member-row" key={row.id}>
-                  <input aria-label="Member name" required value={row.name} placeholder="Surya" onChange={(event) => updateRecipient(row.id, 'name', event.target.value)} />
+                <div className="split-person" key={row.id}>
+                  <input className="split-person-name" aria-label="Member name" required value={row.name} placeholder="Surya" onChange={(event) => updateRecipient(row.id, 'name', event.target.value)} />
                   <div className="split-member-phone"><span>+91</span><input aria-label="Member mobile number" inputMode="numeric" pattern="[0-9]{10}" value={row.phone.replace(/^\+91/, '')} placeholder="Add later" onChange={(event) => updateRecipient(row.id, 'phone', event.target.value.replace(/\D/g, '').slice(-10))} /></div>
                   <div className="split-member-amount"><span>₹</span><input aria-label="Share amount" required type="number" min="1" max="100000" step="0.01" value={row.amount || ''} placeholder="0" onChange={(event) => updateRecipient(row.id, 'amount', event.target.value)} /></div>
-                  <div className="split-member-actions">
+                  <div className="split-person-actions">
                     {isYou
                       ? <span className="split-paid-pill"><Check size={13} /> You · Paid</span>
                       : row.status === 'paid'
@@ -244,7 +245,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
                       : selectedId
                         ? <button className="split-mark-button" type="button" onClick={() => markPaid(row.id)}><CheckCircle2 size={14} /> Mark as paid</button>
                         : <span className="split-pending-pill">Pending</span>}
-                    {row.status !== 'paid' && draft.recipients.length > 1 && (
+                    {row.status !== 'paid' && !isYou && draft.recipients.length > 1 && (
                       <button className="split-remove-button" type="button" aria-label={`Remove ${row.name || 'member'}`} onClick={() => setDraft((current) => ({ ...current, recipients: current.recipients.filter((item) => item.id !== row.id) }))}><Trash2 size={15} /></button>
                     )}
                   </div>

@@ -2170,3 +2170,185 @@ body:has(.ledger-view-shell) #root {
 .split-card-actions > *:hover {
   background: var(--cloud);
 }
+
+/* Split editor: link actions and the live switch sit in the header. */
+.split-editor-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.split-live-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.split-live-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.split-live-switch-track {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 99px;
+  background: #d5dcda;
+  transition: background 0.15s ease;
+}
+
+.split-live-switch-track span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.split-live-switch.on {
+  color: #33765c;
+}
+
+.split-live-switch.on .split-live-switch-track {
+  background: var(--indigo);
+}
+
+.split-live-switch.on .split-live-switch-track span {
+  transform: translateX(12px);
+}
+
+.split-live-switch:focus-within {
+  outline: 2px solid var(--indigo-soft);
+  outline-offset: 1px;
+}
+
+.split-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--indigo-dark);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.split-icon-button:hover {
+  background: var(--cloud);
+}
+
+.split-editor .split-save-button {
+  min-width: 0;
+  min-height: 38px;
+}
+
+.split-editor .split-basics-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* People & shares: every person is a compact card. */
+.split-people {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.split-person {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.8fr) 150px;
+  grid-template-areas: "name phone amount actions";
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 3px 10px rgba(39, 62, 57, 0.05);
+}
+
+.split-person-name { grid-area: name; min-width: 0; height: 39px; }
+.split-person .split-member-phone { grid-area: phone; }
+.split-person .split-member-amount { grid-area: amount; }
+
+.split-person-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.split-person .split-paid-pill,
+.split-person .split-pending-pill,
+.split-person .split-mark-button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.split-person .split-remove-button {
+  width: 32px;
+  height: 32px;
+}
+
+@media (max-width: 700px) {
+  .split-person {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    grid-template-areas:
+      "name actions"
+      "phone amount";
+  }
+}
+
+@media (max-width: 520px) {
+  .split-editor-bar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .split-editor-title {
+    flex: 1 1 auto;
+  }
+
+  .split-editor-title strong {
+    max-width: none;
+  }
+
+  .split-editor-actions {
+    width: 100%;
+  }
+
+  .split-editor-actions .split-save-button {
+    margin-left: auto;
+  }
+
+  .split-icon-button span {
+    display: none;
+  }
+}
