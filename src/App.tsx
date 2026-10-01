@@ -1,4 +1,4 @@
-import { type CSSProperties, ChangeEvent, FormEvent, lazy, Suspense, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, ChangeEvent, FormEvent, lazy, Suspense, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ConfirmationResult,
@@ -416,6 +416,141 @@ function DatePicker({ value, onChange, max }: { value: string; onChange: (value:
               <button type="button" onClick={closePicker}>Cancel</button>
             </div>
           </div>
+        </div>,
+        document.body,
+      ) : null}
+    </>
+  )
+}
+
+function MethodPicker({ value, onChange, disabled }: { value: PaymentMethod; onChange: (value: PaymentMethod) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(() => Math.max(0, methods.indexOf(value)))
+  const [position, setPosition] = useState<CSSProperties>({})
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const SelectedIcon = methodIcons[value]
+
+  useEffect(() => {
+    if (!open) return
+    const place = () => {
+      const rect = triggerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const listHeight = methods.length * 44 + 14
+      const below = window.innerHeight - rect.bottom
+      const flip = below < listHeight + 12 && rect.top > below
+      const width = Math.min(Math.max(rect.width, 210), window.innerWidth - 24)
+      setPosition({
+        left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)),
+        width,
+        ...(flip ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }),
+      })
+    }
+    const closeOnOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (listRef.current?.contains(target) || triggerRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setOpen(false)
+      requestAnimationFrame(() => triggerRef.current?.focus())
+    }
+    place()
+    window.addEventListener('keydown', closeOnEscape, true)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('pointerdown', closeOnOutside, true)
+    requestAnimationFrame(() => listRef.current?.focus())
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('pointerdown', closeOnOutside, true)
+      window.removeEventListener('keydown', closeOnEscape, true)
+    }
+  }, [open])
+
+  function openList() {
+    if (disabled) return
+    setActiveIndex(Math.max(0, methods.indexOf(value)))
+    setOpen(true)
+  }
+
+  function closeList() {
+    setOpen(false)
+    requestAnimationFrame(() => triggerRef.current?.focus())
+  }
+
+  function choose(method: PaymentMethod) {
+    onChange(method)
+    closeList()
+  }
+
+  function onListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowDown') setActiveIndex((index) => (index + 1) % methods.length)
+    else if (event.key === 'ArrowUp') setActiveIndex((index) => (index - 1 + methods.length) % methods.length)
+    else if (event.key === 'Home') setActiveIndex(0)
+    else if (event.key === 'End') setActiveIndex(methods.length - 1)
+    else if (event.key === 'Enter' || event.key === ' ') choose(methods[activeIndex])
+    else if (event.key === 'Tab') {
+      setOpen(false)
+      return
+    } else return
+    event.preventDefault()
+  }
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        className={`method-picker-trigger${open ? ' open' : ''}`}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => (open ? closeList() : openList())}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            openList()
+          }
+        }}
+      >
+        <span className="method-picker-icon"><SelectedIcon size={15} aria-hidden="true" /></span>
+        <span className="method-picker-label">{value}</span>
+        <ChevronDown className="method-picker-chevron" size={16} aria-hidden="true" />
+      </button>
+      {open ? createPortal(
+        <div
+          ref={listRef}
+          className="method-picker-list"
+          role="listbox"
+          aria-label="Payment method"
+          aria-activedescendant={`method-option-${activeIndex}`}
+          tabIndex={-1}
+          style={position}
+          onKeyDown={onListKeyDown}
+        >
+          {methods.map((method, index) => {
+            const Icon = methodIcons[method]
+            return (
+              <div
+                key={method}
+                id={`method-option-${index}`}
+                className={`method-picker-option${index === activeIndex ? ' active' : ''}${method === value ? ' selected' : ''}`}
+                role="option"
+                aria-selected={method === value}
+                onPointerEnter={() => setActiveIndex(index)}
+                onClick={() => choose(method)}
+              >
+                <span className="method-picker-icon"><Icon size={15} aria-hidden="true" /></span>
+                <span>{method}</span>
+                {method === value ? <Check className="method-picker-check" size={15} aria-hidden="true" /> : null}
+              </div>
+            )
+          })}
         </div>,
         document.body,
       ) : null}
@@ -1426,9 +1561,7 @@ function AddEntryModal({
               </label>
               <label className="entry-method-field">
                 Paid using
-                <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
-                  {methods.map((item) => <option key={item}>{item}</option>)}
-                </select>
+                <MethodPicker value={method} onChange={setMethod} />
               </label>
               <div className="entry-date-field form-field">
                 <span>Date</span>
@@ -1918,9 +2051,7 @@ export function RepaymentModal({
             </label>
             <label>
               Payment method
-              <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)} disabled={working}>
-                {methods.map((item) => <option key={item}>{item}</option>)}
-              </select>
+              <MethodPicker value={method} onChange={setMethod} disabled={working} />
             </label>
             <label className="repayment-note">
               Note
@@ -2252,9 +2383,7 @@ export function BulkPaymentModal({
             </label>
             <label>
               Payment method
-              <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)} disabled={working}>
-                {methods.map((item) => <option key={item}>{item}</option>)}
-              </select>
+              <MethodPicker value={method} onChange={setMethod} disabled={working} />
             </label>
             <label className="repayment-note">
               Note
@@ -2492,9 +2621,7 @@ function ReviewRequestModal({
               </label>
               <label className="review-detail-field">
                 Paid using
-                <select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)}>
-                  {methods.map((item) => <option key={item}>{item}</option>)}
-                </select>
+                <MethodPicker value={method} onChange={setMethod} />
               </label>
               <label className="review-detail-field">
                 What was it for?
