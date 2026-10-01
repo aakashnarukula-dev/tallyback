@@ -124,6 +124,15 @@ type View = 'ledger' | 'activity' | 'splits'
 
 const SPLITS_ENABLED = true
 
+const VIEW_PATHS: Record<View, string> = { ledger: '/dues', splits: '/splits', activity: '/activity' }
+
+export function viewFromPath(pathname: string): View {
+  const path = pathname.replace(/\/+$/, '').toLowerCase()
+  if (path === '/splits' && SPLITS_ENABLED) return 'splits'
+  if (path === '/activity') return 'activity'
+  return 'ledger'
+}
+
 type ContactSummary = {
   person: Person
   total: number
@@ -3610,8 +3619,23 @@ function TallyBackApp() {
   const [dataLoading, setDataLoading] = useState(false)
   const [contactsLoading, setContactsLoading] = useState(false)
   const [direction, setDirection] = useState<Direction>('receivable')
-  const [view, setView] = useState<View>('ledger')
+  const [view, setViewState] = useState<View>(() => viewFromPath(window.location.pathname))
   const [search, setSearch] = useState('')
+
+  function setView(nextView: View) {
+    setViewState(nextView)
+    const path = VIEW_PATHS[nextView]
+    if (window.location.pathname === path) return
+    // A sheet closing as we switch leaves its history entry behind; take it over instead of stacking on it.
+    if (window.history.state?.tallyBackDismissLayer) window.history.replaceState(null, '', path)
+    else window.history.pushState(null, '', path)
+  }
+
+  useEffect(() => {
+    const syncViewWithUrl = () => setViewState(viewFromPath(window.location.pathname))
+    window.addEventListener('popstate', syncViewWithUrl)
+    return () => window.removeEventListener('popstate', syncViewWithUrl)
+  }, [])
   const [showAddPerson, setShowAddPerson] = useState(false)
   const [addDuePerson, setAddDuePerson] = useState<Person | null>(null)
   const [editEntryTarget, setEditEntryTarget] = useState<LedgerEntry | null>(null)
