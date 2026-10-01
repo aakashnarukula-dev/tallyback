@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { splitEditorPath, splitIdFromEditorPath } from './routes'
 import {
   ArrowLeft,
   Check,
@@ -50,7 +51,7 @@ function draftFromPage(page: SplitPage, contacts: Record<string, SplitContact>):
 
 export default function SplitWorkspace({ currentUser, onNotice }: { currentUser: Person; onNotice: (message: string) => void }) {
   const [pages, setPages] = useState<SplitPage[]>([])
-  const [selectedId, setSelectedId] = useState('')
+  const [selectedId, setSelectedId] = useState(() => splitIdFromEditorPath(window.location.pathname))
   const [contacts, setContacts] = useState<Record<string, SplitContact>>({})
   const [draft, setDraft] = useState<SplitDraft>(blankDraft)
   const [creating, setCreating] = useState(false)
@@ -67,6 +68,29 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
       onNotice('Could not load your split payments.')
     })
   }, [onNotice])
+
+  // Back/forward between /splits and /splits/<slug> opens or closes the editor.
+  useEffect(() => {
+    const syncEditorWithUrl = () => {
+      if (!window.location.pathname.toLowerCase().startsWith('/splits')) return
+      const splitId = splitIdFromEditorPath(window.location.pathname)
+      setCreating(false)
+      setSelectedId(splitId)
+      setContacts({})
+      if (!splitId) setDraft(blankDraft())
+    }
+    window.addEventListener('popstate', syncEditorWithUrl)
+    return () => window.removeEventListener('popstate', syncEditorWithUrl)
+  }, [])
+
+  // A /splits/<slug> link to a split this account doesn't own falls back to the list.
+  useEffect(() => {
+    if (loading || !selectedId || pages.some((page) => page.id === selectedId)) return
+    if (splitIdFromEditorPath(window.location.pathname) !== selectedId) return
+    setSelectedId('')
+    window.history.replaceState(null, '', splitEditorPath(''))
+    // Only checked once the list first loads; later saves add their page a moment after.
+  }, [loading])
 
   useEffect(() => {
     if (!selectedId) {
@@ -88,7 +112,15 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     .filter((row) => row.status === 'paid' || (row.phone && normalizePhone(row.phone) === ownerPhone))
     .reduce((sum, row) => sum + Number(row.amount || 0), 0), [draft.recipients, ownerPhone])
 
+  function showEditorUrl(splitId: string) {
+    const path = splitEditorPath(splitId)
+    if (window.location.pathname === path) return
+    if (window.history.state?.tallyBackSplitEditor) window.history.replaceState({ tallyBackSplitEditor: true }, '', path)
+    else window.history.pushState({ tallyBackSplitEditor: true }, '', path)
+  }
+
   function selectPage(page: SplitPage) {
+    showEditorUrl(page.id)
     setCreating(false)
     setSelectedId(page.id)
     setContacts({})
@@ -103,6 +135,11 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
   }
 
   function closeEditor() {
+    if (splitIdFromEditorPath(window.location.pathname)) {
+      // Step back to the list entry we came from; a split opened straight from a link has none, so swap in /splits.
+      if (window.history.state?.tallyBackSplitEditor) window.history.back()
+      else window.history.replaceState(null, '', splitEditorPath(''))
+    }
     setCreating(false)
     setSelectedId('')
     setContacts({})
@@ -124,6 +161,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     setSaving(true)
     try {
       const id = await saveSplitPage(draft, auth.currentUser.uid, currentUser)
+      showEditorUrl(id)
       setSelectedId(id)
       setCreating(false)
       onNotice('Split saved. Everyone with a number now has a matching ledger entry.')
