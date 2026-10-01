@@ -2382,3 +2382,12 @@ body:has(.ledger-view-shell) #root {
 .split-admin-layout .split-list-panel {
   position: static;
 }
+
+.drawer-section-title span.drawer-section-total {
+  min-width: 0;
+  width: auto;
+  padding: 0 9px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

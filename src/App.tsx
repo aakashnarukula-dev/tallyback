@@ -3401,6 +3401,7 @@ function PersonDrawer({
     summary.entries.filter((entry) => !isPaidEntry(entry)),
   )
   const paidDueEntries = sortLedgerEntriesOldestFirst(summary.entries.filter(isPaidEntry))
+  const paidTotal = paidDueEntries.reduce((sum, entry) => sum + entryOriginalAmount(entry), 0)
   const firstName = summary.person.name.split(' ')[0]
   const sheetRef = useRef<HTMLElement>(null)
   const closeTimerRef = useRef<number | null>(null)
@@ -3529,7 +3530,11 @@ function PersonDrawer({
             <div>
               <h3>{direction === 'receivable' ? `Payments expected from ${firstName}` : `Payments expected by ${firstName}`}</h3>
             </div>
-            <span>{summary.openCount}</span>
+            {summary.openCount ? (
+              <span className="drawer-section-total" aria-label={`${money.format(summary.total)} across ${summary.openCount} open ${summary.openCount === 1 ? 'due' : 'dues'}`}>
+                {money.format(summary.total)}
+              </span>
+            ) : null}
           </div>
           {!summary.openCount ? (
             <div className={`drawer-empty-ledger ${direction === 'receivable' ? 'receivable-empty' : ''}`}>
@@ -3587,7 +3592,9 @@ function PersonDrawer({
                       : `Payments already sent to ${firstName}`}
                   </h3>
                 </div>
-                <span>{paidDueEntries.length}</span>
+                <span className="drawer-section-total" aria-label={`${money.format(paidTotal)} across ${paidDueEntries.length} paid ${paidDueEntries.length === 1 ? 'due' : 'dues'}`}>
+                  {money.format(paidTotal)}
+                </span>
                 <ChevronDown className={paidExpanded ? 'expanded' : ''} size={17} aria-hidden="true" />
               </button>
               {paidExpanded ? <div className="drawer-entry-list">
