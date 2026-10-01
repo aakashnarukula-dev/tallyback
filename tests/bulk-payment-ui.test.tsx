@@ -77,4 +77,21 @@ describe('record payment across dues', () => {
     expect(screen.getByRole('alert').textContent).toContain('₹2,000 is not assigned yet')
     expect(onSave).not.toHaveBeenCalled()
   })
+
+  it('picks the payment method from the styled list', async () => {
+    vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<BulkPaymentModal person={dues[0].borrower} dues={dues} onClose={vi.fn()} onSave={onSave} />)
+
+    await user.click(screen.getByRole('button', { name: /payment method/i }))
+    await user.click(screen.getByRole('option', { name: /Bank transfer/ }))
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    await user.type(screen.getByRole('textbox', { name: /amount received/i }), '8000')
+    await user.click(screen.getByRole('checkbox', { name: /Credit card payment/ }))
+    await user.click(screen.getByRole('button', { name: 'Save payment' }))
+
+    expect(onSave.mock.calls[0][0].method).toBe('Bank transfer')
+  })
 })
