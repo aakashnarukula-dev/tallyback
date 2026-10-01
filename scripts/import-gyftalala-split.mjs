@@ -5,6 +5,11 @@
 // TallyBack split owned by the account with --owner-phone. It writes exactly
 // what the app's saveSplitPage + markSplitRecipientPaid would: the split page,
 // its private contacts, one ledger entry per person and their activity rows.
+// The owner is listed with their own share, already paid and with no due, the
+// same as on Gyftalala: a split's total is the whole group's cost.
+//
+// If the TallyBack split already exists, only the people it is missing are
+// added; everyone already in it is left exactly as it is.
 //
 // Gyftalala is only read. Runs as a dry run unless --write is passed.
 //
@@ -97,24 +102,37 @@ const upiSnapshot = await tallyback.collection('upiProfiles').doc(ownerPhone).ge
 const ownerUpiId = upiSnapshot.exists && typeof upiSnapshot.data().upiId === 'string' ? upiSnapshot.data().upiId : null
 console.log(`TallyBack owner: ${ownerName} (${ownerUid})${ownerUpiId ? `, UPI ${ownerUpiId}` : ', no UPI ID saved'}`)
 
-// The owner's own share is not a due anyone owes them, and the app does not
-// allow adding yourself to your own split.
+// The owner's own share is part of the group's total, but it is not a due
+// anyone owes them, so it is written as paid with no ledger entry.
 const ownRow = sourceRows.find((row) => row.phone === digits10(ownerPhone))
-const rows = sourceRows.filter((row) => row !== ownRow)
-if (ownRow) console.log(`Leaving out ${ownRow.name}'s own ₹${ownRow.amount} share (the owner's).`)
-const problems = rows.filter((row) => !row.name || !(row.amount > 0) || (row.phone && row.phone.length !== 10))
+if (ownRow) {
+  ownRow.owner = true
+  ownRow.paid = true
+  console.log(`${ownRow.name}'s own ₹${ownRow.amount} share is the owner's: listed as paid, no due.`)
+}
+const allRows = sourceRows
+const problems = allRows.filter((row) => !row.name || !(row.amount > 0) || (row.phone && row.phone.length !== 10))
 if (problems.length) throw new Error(`Rows without a name or amount, or with a bad phone: ${problems.map((row) => row.name || row.sourceId).join(', ')}`)
-const phones = rows.map((row) => row.phone).filter(Boolean)
+const phones = allRows.map((row) => row.phone).filter(Boolean)
 if (new Set(phones).size !== phones.length) throw new Error('Two people share a phone number.')
 // Without a number there is no one to hold a due, so such a member is added to
 // the split by name only. Typing their number into the split in the app later
 // creates their due.
-const noPhone = rows.filter((row) => !row.phone)
+const noPhone = allRows.filter((row) => !row.phone)
 if (noPhone.length) console.log(`Adding by name only (add their number in the app later): ${noPhone.map((row) => row.name).join(', ')}`)
-if (!rows.length || rows.length > 50) throw new Error(`A split needs 1–50 people, found ${rows.length}.`)
+if (!allRows.length || allRows.length > 50) throw new Error(`A split needs 1–50 people, found ${allRows.length}.`)
 
 const pageRef = tallyback.collection('splitPages').doc(splitId)
-if ((await pageRef.get()).exists) throw new Error(`TallyBack split ${splitId} already exists; nothing written.`)
+const existingSnapshot = await pageRef.get()
+const existing = existingSnapshot.exists ? existingSnapshot.data() : null
+if (existing && existing.ownerUid !== ownerUid) throw new Error(`TallyBack split ${splitId} belongs to someone else; nothing written.`)
+const existingIds = new Set((existing?.recipients || []).map((row) => row.id))
+const rows = allRows.filter((row) => !existingIds.has(memberId(row.sourceId)))
+if (existing) console.log(`TallyBack split ${splitId} already exists with ${existingIds.size} people; adding the ${rows.length} it is missing.`)
+if (!rows.length) {
+  console.log('Nothing to add.')
+  process.exit(0)
+}
 
 // --- Build the TallyBack documents ------------------------------------------
 const createdAtIso = toIso(source.createdAt) || new Date().toISOString()
@@ -127,24 +145,35 @@ const recipients = rows.map((row) => {
     amount: row.amount,
     status: row.paid ? 'paid' : 'pending',
     ...(row.paid ? { paidAt: row.paidAt || createdAtIso } : {}),
-    ledgerEntryId: ledgerId(id),
+    ...(row.owner ? {} : { ledgerEntryId: ledgerId(id) }),
   }
 })
+// Keep Gyftalala's order; anyone TallyBack has that Gyftalala doesn't stays last.
+const sourceOrder = new Map(allRows.map((row, index) => [memberId(row.sourceId), index]))
+const allRecipients = [...(existing?.recipients || []), ...recipients]
+  .map((row, index) => ({ row, rank: sourceOrder.get(row.id) ?? allRows.length + index }))
+  .sort((a, b) => a.rank - b.rank)
+  .map(({ row }) => row)
 
 const batch = tallyback.batch()
-batch.set(pageRef, {
-  title,
-  description: String(source.description || '').trim().slice(0, 280),
-  active: Boolean(source.active),
-  currency: 'INR',
-  ownerUid,
-  ownerName,
-  ...(ownerUpiId ? { ownerUpiId } : {}),
-  recipients,
-  totalAmount: recipients.reduce((sum, row) => sum + row.amount, 0),
-  createdAt: FieldValue.serverTimestamp(),
-  updatedAt: FieldValue.serverTimestamp(),
-})
+const totalAmount = allRecipients.reduce((sum, row) => sum + row.amount, 0)
+if (existing) {
+  batch.update(pageRef, { recipients: allRecipients, totalAmount, updatedAt: FieldValue.serverTimestamp() })
+} else {
+  batch.set(pageRef, {
+    title,
+    description: String(source.description || '').trim().slice(0, 280),
+    active: Boolean(source.active),
+    currency: 'INR',
+    ownerUid,
+    ownerName,
+    ...(ownerUpiId ? { ownerUpiId } : {}),
+    recipients,
+    totalAmount,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  })
+}
 
 const owner = { name: ownerName, phone: ownerPhone }
 const activity = (entryId, entry, type, amount, status) => {
@@ -179,6 +208,7 @@ rows.forEach((row, index) => {
     phone,
     updatedAt: FieldValue.serverTimestamp(),
   })
+  if (row.owner) return
   const entryId = recipient.ledgerEntryId
   const entry = {
     lender: owner,
@@ -207,9 +237,9 @@ rows.forEach((row, index) => {
   batch.set(tallyback.collection('ledgerEntries').doc(entryId), entry)
 })
 
-console.log(`TallyBack split ${splitId}: ${recipients.length} people, ₹${recipients.reduce((s, r) => s + r.amount, 0)} total, ${recipients.filter((r) => r.status === 'paid').length} paid.`)
+console.log(`TallyBack split ${splitId}: ${allRecipients.length} people, ₹${totalAmount} total, ${allRecipients.filter((r) => r.status === 'paid').length} paid.`)
 if (!write) {
-  console.log('Dry run: nothing written. Re-run with --write to create it.')
+  console.log('Dry run: nothing written. Re-run with --write to write it.')
 } else {
   await batch.commit()
   console.log(`Written. Owner view: https://tally-back.web.app  Public page: https://tally-back.web.app/split/${splitId}`)

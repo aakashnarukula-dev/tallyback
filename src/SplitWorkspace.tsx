@@ -10,7 +10,7 @@ import {
   Save,
   Trash2,
 } from 'lucide-react'
-import { Person } from './data'
+import { normalizePhone, Person } from './data'
 import { money } from './currency'
 import {
   markSplitRecipientPaid,
@@ -24,11 +24,15 @@ import {
 } from './firebase-splits'
 import { auth } from './firebase'
 
-const blankDraft = (): SplitDraft => ({
+// A split is the whole group's cost, so a new one starts with the owner's own
+// share, already paid, and the people they are collecting from below it.
+const blankDraft = (owner?: Person): SplitDraft => ({
   title: '',
   description: '',
   active: true,
-  recipients: [newRecipient()],
+  recipients: owner
+    ? [{ ...newRecipient(), name: owner.name, phone: normalizePhone(owner.phone), status: 'paid' }, newRecipient()]
+    : [newRecipient()],
 })
 
 function draftFromPage(page: SplitPage, contacts: Record<string, SplitContact>): SplitDraft {
@@ -78,8 +82,11 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     if (page) setDraft(draftFromPage(page, contacts))
   }, [contacts, pages, selectedId])
 
+  const ownerPhone = normalizePhone(currentUser.phone)
   const total = useMemo(() => draft.recipients.reduce((sum, row) => sum + (Number(row.amount) || 0), 0), [draft.recipients])
-  const paid = useMemo(() => draft.recipients.filter((row) => row.status === 'paid').reduce((sum, row) => sum + Number(row.amount || 0), 0), [draft.recipients])
+  const paid = useMemo(() => draft.recipients
+    .filter((row) => row.status === 'paid' || (row.phone && normalizePhone(row.phone) === ownerPhone))
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0), [draft.recipients, ownerPhone])
 
   function selectPage(page: SplitPage) {
     setCreating(false)
@@ -92,7 +99,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     setCreating(true)
     setSelectedId('')
     setContacts({})
-    setDraft(blankDraft())
+    setDraft(blankDraft(currentUser))
   }
 
   function closeEditor() {
@@ -119,7 +126,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
       const id = await saveSplitPage(draft, auth.currentUser.uid, currentUser)
       setSelectedId(id)
       setCreating(false)
-      onNotice('Split saved. Every member now has a matching ledger entry.')
+      onNotice('Split saved. Everyone with a number now has a matching ledger entry.')
     } catch (error) {
       onNotice((error as Error).message || 'Could not save this split.')
     } finally {
@@ -207,13 +214,17 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
 
             <div className="split-member-labels"><span>Name</span><span>Mobile number</span><span>Share</span><span>Status</span></div>
             <div className="split-members">
-              {draft.recipients.map((row) => (
+              {draft.recipients.map((row) => {
+                const isYou = Boolean(row.phone) && normalizePhone(row.phone) === ownerPhone
+                return (
                 <div className="split-member-row" key={row.id}>
                   <input aria-label="Member name" required value={row.name} placeholder="Surya" onChange={(event) => updateRecipient(row.id, 'name', event.target.value)} />
-                  <div className="split-member-phone"><span>+91</span><input aria-label="Member mobile number" required inputMode="numeric" value={row.phone.replace(/^\+91/, '')} placeholder="9876543210" onChange={(event) => updateRecipient(row.id, 'phone', event.target.value.replace(/\D/g, '').slice(-10))} /></div>
+                  <div className="split-member-phone"><span>+91</span><input aria-label="Member mobile number" inputMode="numeric" pattern="[0-9]{10}" value={row.phone.replace(/^\+91/, '')} placeholder="Add later" onChange={(event) => updateRecipient(row.id, 'phone', event.target.value.replace(/\D/g, '').slice(-10))} /></div>
                   <div className="split-member-amount"><span>₹</span><input aria-label="Share amount" required type="number" min="1" max="100000" step="0.01" value={row.amount || ''} placeholder="0" onChange={(event) => updateRecipient(row.id, 'amount', event.target.value)} /></div>
                   <div className="split-member-actions">
-                    {row.status === 'paid'
+                    {isYou
+                      ? <span className="split-paid-pill"><Check size={13} /> You · Paid</span>
+                      : row.status === 'paid'
                       ? <span className="split-paid-pill"><Check size={13} /> Paid</span>
                       : selectedId
                         ? <button className="split-mark-button" type="button" onClick={() => markPaid(row.id)}><CheckCircle2 size={14} /> Mark as paid</button>
@@ -223,7 +234,8 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
             <button className="split-add-member" type="button" onClick={() => setDraft((current) => ({ ...current, recipients: [...current.recipients, newRecipient()] }))}><Plus size={16} /> Add person</button>
           </div>

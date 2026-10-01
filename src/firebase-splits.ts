@@ -107,12 +107,17 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
     amount: Number(row.amount),
   }))
   if (!recipients.length) throw new Error('Add at least one person.')
-  if (recipients.some((row) => !row.name || row.phone.length !== 10 || !Number.isFinite(row.amount) || row.amount <= 0)) {
-    throw new Error('Each person needs a name, a 10-digit number, and an amount.')
+  // A number is optional: a member added by name only has no due until their
+  // number is filled in.
+  if (recipients.some((row) => !row.name || (row.phone && row.phone.length !== 10) || !Number.isFinite(row.amount) || row.amount <= 0)) {
+    throw new Error('Each person needs a name, an amount, and a 10-digit number if you add one.')
   }
-  const uniquePhones = new Set(recipients.map((row) => row.phone))
-  if (uniquePhones.size !== recipients.length) throw new Error('Each person can appear only once in a split.')
-  if (uniquePhones.has(normalizePhone(owner.phone))) throw new Error('You do not need to add yourself to your own split.')
+  const phones = recipients.map((row) => row.phone).filter(Boolean)
+  if (new Set(phones).size !== phones.length) throw new Error('Each person can appear only once in a split.')
+  // A split is the whole group's cost, so the owner is listed with their own
+  // share. That share is already paid (they paid the bill) and is never a due.
+  const ownerPhone = normalizePhone(owner.phone)
+  const isOwnerRow = (row: { phone: string }) => Boolean(row.phone) && row.phone === ownerPhone
 
   const database = requireDatabase()
   const splitId = draft.id || createSplitId(title)
@@ -122,6 +127,15 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
   const existingRecipients = new Map((existingPage?.recipients || []).map((row) => [row.id, row]))
   const nextRecipients: SplitRecipient[] = recipients.map((row) => {
     const existing = existingRecipients.get(row.id)
+    if (isOwnerRow(row)) {
+      return {
+        id: row.id,
+        name: row.name,
+        amount: row.amount,
+        status: 'paid',
+        paidAt: existing?.paidAt || new Date().toISOString(),
+      }
+    }
     return {
       id: row.id,
       name: row.name,
@@ -159,6 +173,7 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
 
   recipients.forEach((row) => {
     const publicRow = nextRecipients.find((candidate) => candidate.id === row.id)!
+    if (!row.phone) return
     batch.set(doc(database, 'splitPages', splitId, 'contacts', row.id), {
       recipientId: row.id,
       name: row.name,
@@ -167,7 +182,7 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
     })
 
     const existingRecipient = existingRecipients.get(row.id)
-    if (existingRecipient?.status === 'paid') return
+    if (existingRecipient?.status === 'paid' || !publicRow.ledgerEntryId) return
 
     const entryId = publicRow.ledgerEntryId!
     const entryRef = doc(database, 'ledgerEntries', entryId)
@@ -218,10 +233,11 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
   for (const oldRecipient of existingPage?.recipients || []) {
     if (nextRecipients.some((row) => row.id === oldRecipient.id)) continue
     batch.delete(doc(database, 'splitPages', splitId, 'contacts', oldRecipient.id))
-    if (oldRecipient.ledgerEntryId && oldRecipient.status !== 'paid') {
-      const oldEntry = existingLedgerEntries.get(oldRecipient.ledgerEntryId)
-      const originalAmount = oldEntry ? entryOriginalAmount(oldEntry) : oldRecipient.amount
-      batch.update(doc(database, 'ledgerEntries', oldRecipient.ledgerEntryId), {
+    // A member added by name only never had a due, so there is nothing to close.
+    const oldEntry = oldRecipient.ledgerEntryId ? existingLedgerEntries.get(oldRecipient.ledgerEntryId) : null
+    if (oldEntry && oldRecipient.status !== 'paid') {
+      const originalAmount = entryOriginalAmount(oldEntry)
+      batch.update(doc(database, 'ledgerEntries', oldEntry.id), {
         originalAmount,
         paidAmount: originalAmount,
         remainingAmount: 0,
@@ -229,17 +245,15 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
         settledAt: new Date().toISOString(),
         updatedAt: serverTimestamp(),
       })
-      if (oldEntry) {
-        const activity = activityDocument(
-          { ...oldEntry, originalAmount, paidAmount: originalAmount, remainingAmount: 0, status: 'paid' },
-          uid,
-          owner,
-          'due_marked_paid',
-          oldEntry.id,
-          { amount: Math.max(0, originalAmount - entryPaidAmount(oldEntry)), status: 'paid' },
-        )
-        batch.set(activity.ref, activity.data)
-      }
+      const activity = activityDocument(
+        { ...oldEntry, originalAmount, paidAmount: originalAmount, remainingAmount: 0, status: 'paid' },
+        uid,
+        owner,
+        'due_marked_paid',
+        oldEntry.id,
+        { amount: Math.max(0, originalAmount - entryPaidAmount(oldEntry)), status: 'paid' },
+      )
+      batch.set(activity.ref, activity.data)
     }
   }
 
