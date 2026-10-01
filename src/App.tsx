@@ -118,6 +118,7 @@ import {
 import { money } from './currency'
 import { UpiPayPanel } from './UpiPayPanel'
 import { isValidUpiId, normalizeUpiId } from './upi'
+import { splitIdFromEditorPath } from './routes'
 
 type Direction = 'receivable' | 'payable'
 type View = 'ledger' | 'activity' | 'splits'
@@ -128,7 +129,7 @@ const VIEW_PATHS: Record<View, string> = { ledger: '/dues', splits: '/splits', a
 
 export function viewFromPath(pathname: string): View {
   const path = pathname.replace(/\/+$/, '').toLowerCase()
-  if (path === '/splits' && SPLITS_ENABLED) return 'splits'
+  if ((path === '/splits' || splitIdFromEditorPath(path)) && SPLITS_ENABLED) return 'splits'
   if (path === '/activity') return 'activity'
   return 'ledger'
 }
@@ -3626,6 +3627,8 @@ function TallyBackApp() {
     setViewState(nextView)
     const path = VIEW_PATHS[nextView]
     if (window.location.pathname === path) return
+    // An open split editor (/splits/<slug>) already belongs to Splits.
+    if (nextView === 'splits' && splitIdFromEditorPath(window.location.pathname)) return
     // A sheet closing as we switch leaves its history entry behind; take it over instead of stacking on it.
     if (window.history.state?.tallyBackDismissLayer) window.history.replaceState(null, '', path)
     else window.history.pushState(null, '', path)
@@ -3633,7 +3636,10 @@ function TallyBackApp() {
 
   useEffect(() => {
     // Show the section's own URL (e.g. / becomes /dues) without adding a back-button step.
-    const initialPath = VIEW_PATHS[viewFromPath(window.location.pathname)]
+    const initialView = viewFromPath(window.location.pathname)
+    const initialPath = initialView === 'splits' && splitIdFromEditorPath(window.location.pathname)
+      ? window.location.pathname
+      : VIEW_PATHS[initialView]
     if (window.location.pathname !== initialPath) {
       window.history.replaceState(window.history.state, '', `${initialPath}${window.location.search}${window.location.hash}`)
     }
