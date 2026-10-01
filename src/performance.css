@@ -1495,3 +1495,19 @@
     padding: 0 9px;
   }
 }
+
+/* Public split page: keep each person on one row at every width, with the
+   Pay via UPI / Paid button on the right, same as on a wide screen. */
+@media (max-width: 520px) {
+  .split-public-list article {
+    grid-template-columns: auto minmax(0, 1fr) auto 78px;
+    gap: 9px;
+  }
+
+  .split-public-list article > button,
+  .split-public-list article > .split-public-pay {
+    grid-column: auto;
+    width: 100%;
+    padding: 0 6px;
+  }
+}
