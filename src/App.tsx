@@ -3632,6 +3632,11 @@ function TallyBackApp() {
   }
 
   useEffect(() => {
+    // Show the section's own URL (e.g. / becomes /dues) without adding a back-button step.
+    const initialPath = VIEW_PATHS[viewFromPath(window.location.pathname)]
+    if (window.location.pathname !== initialPath) {
+      window.history.replaceState(window.history.state, '', `${initialPath}${window.location.search}${window.location.hash}`)
+    }
     const syncViewWithUrl = () => setViewState(viewFromPath(window.location.pathname))
     window.addEventListener('popstate', syncViewWithUrl)
     return () => window.removeEventListener('popstate', syncViewWithUrl)
