@@ -11,9 +11,12 @@
 //   node scripts/import-gyftalala-split.mjs --slug kishore-wedding-gift --owner-phone 9177216132 [--write]
 //
 // Credentials come from Application Default Credentials (gcloud auth
-// application-default login) with access to both Firebase projects.
+// application-default login). When the two projects belong to different Google
+// accounts, point GYFTALALA_CREDENTIALS and/or TALLYBACK_CREDENTIALS at a saved
+// copy of each account's application_default_credentials.json.
 // GYFTALALA_PROJECT / TALLYBACK_PROJECT override the project ids.
 
+import { Firestore } from '@google-cloud/firestore'
 import { applicationDefault, initializeApp } from 'firebase-admin/app'
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore'
 
@@ -32,9 +35,12 @@ if (!slug || !ownerPhoneArg) {
 }
 
 const useEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST)
-const appOptions = (projectId) => useEmulator ? { projectId } : { projectId, credential: applicationDefault() }
-const gyftalala = getFirestore(initializeApp(appOptions(process.env.GYFTALALA_PROJECT || 'gyftalala-new'), 'gyftalala'))
-const tallyback = getFirestore(initializeApp(appOptions(process.env.TALLYBACK_PROJECT || 'tally-back'), 'tallyback'))
+const database = (name, projectId, keyFilename) => {
+  if (keyFilename && !useEmulator) return new Firestore({ projectId, keyFilename })
+  return getFirestore(initializeApp(useEmulator ? { projectId } : { projectId, credential: applicationDefault() }, name))
+}
+const gyftalala = database('gyftalala', process.env.GYFTALALA_PROJECT || 'gyftalala-new', process.env.GYFTALALA_CREDENTIALS)
+const tallyback = database('tallyback', process.env.TALLYBACK_PROJECT || 'tally-back', process.env.TALLYBACK_CREDENTIALS)
 
 const digits10 = (value) => String(value || '').replace(/\D/g, '').slice(-10)
 const toE164 = (value) => `+91${digits10(value)}`
@@ -49,6 +55,7 @@ const memberId = (gyftalalaId) => `member-${String(gyftalalaId).replace(/^guest_
 const ledgerId = (recipientId) => `split-${splitId}-${recipientId}`.slice(0, 180)
 
 // --- Read Gyftalala -------------------------------------------------------
+console.log('Reading the Gyftalala split…')
 const sourceRef = gyftalala.collection('splitPages').doc(slug)
 const sourceSnapshot = await sourceRef.get()
 if (!sourceSnapshot.exists) throw new Error(`Gyftalala split ${slug} was not found.`)
@@ -73,6 +80,7 @@ console.log(`Gyftalala "${source.title}" (${source.active ? 'live' : 'hidden'}),
 for (const row of sourceRows) console.log(`  ${row.paid ? 'paid   ' : 'pending'} ₹${row.amount}  ${row.name}${row.phone ? '' : '  (no contact number)'}`)
 
 // --- Resolve the TallyBack owner -------------------------------------------
+console.log('Reading TallyBack…')
 const ownerPhone = toE164(ownerPhoneArg)
 const usersSnapshot = await tallyback.collection('users').where('phone', 'in', [ownerPhone, digits10(ownerPhone)]).get()
 if (usersSnapshot.size !== 1) throw new Error(`Expected one TallyBack user with phone ${ownerPhone}, found ${usersSnapshot.size}.`)
