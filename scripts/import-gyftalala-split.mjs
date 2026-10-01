@@ -102,9 +102,15 @@ console.log(`TallyBack owner: ${ownerName} (${ownerUid})${ownerUpiId ? `, UPI ${
 const ownRow = sourceRows.find((row) => row.phone === digits10(ownerPhone))
 const rows = sourceRows.filter((row) => row !== ownRow)
 if (ownRow) console.log(`Leaving out ${ownRow.name}'s own ₹${ownRow.amount} share (the owner's).`)
-const problems = rows.filter((row) => !row.name || row.phone.length !== 10 || !(row.amount > 0))
-if (problems.length) throw new Error(`Rows without a name, 10-digit phone or amount: ${problems.map((row) => row.name || row.sourceId).join(', ')}`)
-if (new Set(rows.map((row) => row.phone)).size !== rows.length) throw new Error('Two people share a phone number.')
+const problems = rows.filter((row) => !row.name || !(row.amount > 0) || (row.phone && row.phone.length !== 10))
+if (problems.length) throw new Error(`Rows without a name or amount, or with a bad phone: ${problems.map((row) => row.name || row.sourceId).join(', ')}`)
+const phones = rows.map((row) => row.phone).filter(Boolean)
+if (new Set(phones).size !== phones.length) throw new Error('Two people share a phone number.')
+// Without a number there is no one to hold a due, so such a member is added to
+// the split by name only. Typing their number into the split in the app later
+// creates their due.
+const noPhone = rows.filter((row) => !row.phone)
+if (noPhone.length) console.log(`Adding by name only (add their number in the app later): ${noPhone.map((row) => row.name).join(', ')}`)
 if (!rows.length || rows.length > 50) throw new Error(`A split needs 1–50 people, found ${rows.length}.`)
 
 const pageRef = tallyback.collection('splitPages').doc(splitId)
@@ -165,6 +171,7 @@ const activity = (entryId, entry, type, amount, status) => {
 
 rows.forEach((row, index) => {
   const recipient = recipients[index]
+  if (!row.phone) return
   const phone = toE164(row.phone)
   batch.set(pageRef.collection('contacts').doc(recipient.id), {
     recipientId: recipient.id,

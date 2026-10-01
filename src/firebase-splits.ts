@@ -195,17 +195,20 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
       createdBy: uid,
       updatedAt: serverTimestamp(),
     }
-    if (!existingRecipient) {
+    // A member imported without a phone number has no due yet; adding the
+    // number later creates it here, so key "new" off the due, not the member.
+    const ledgerExists = Boolean(existingLedgerEntry)
+    if (!ledgerExists) {
       entry.createdAt = serverTimestamp()
       entry.historyStarted = false
     }
-    batch.set(entryRef, entry, { merge: Boolean(existingRecipient) })
+    batch.set(entryRef, entry, { merge: ledgerExists })
     const activityEntry = { id: entryId, ...entry } as LedgerEntry
     const activity = activityDocument(
       activityEntry,
       uid,
       owner,
-      existingRecipient ? 'due_edited' : 'due_created',
+      ledgerExists ? 'due_edited' : 'due_created',
       entryId,
       { amount: row.amount, status },
     )
