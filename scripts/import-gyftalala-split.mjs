@@ -8,7 +8,7 @@
 //
 // Gyftalala is only read. Runs as a dry run unless --write is passed.
 //
-//   node scripts/import-gyftalala-split.mjs --slug kishore-wedding-gift --owner-phone 9177216132 [--write]
+//   node scripts/import-gyftalala-split.mjs --slug kishore-wedding-gift --owner-phone 9177216132 [--phone "Name=9876543210"] [--write]
 //
 // Credentials come from Application Default Credentials (gcloud auth
 // application-default login). When the two projects belong to different Google
@@ -29,6 +29,13 @@ const slug = arg('slug')
 const splitId = arg('split-id') || slug
 const ownerPhoneArg = arg('owner-phone')
 const write = args.includes('--write')
+// --phone "Name=9876543210" (repeatable) fills a number Gyftalala doesn't have.
+const phoneOverrides = new Map(args
+  .flatMap((value, index) => (args[index - 1] === '--phone' ? [value] : []))
+  .map((pair) => {
+    const at = pair.lastIndexOf('=')
+    return [pair.slice(0, at).trim().toLowerCase(), String(pair.slice(at + 1)).replace(/\D/g, '').slice(-10)]
+  }))
 if (!slug || !ownerPhoneArg) {
   console.error('Usage: --slug <gyftalala slug> --owner-phone <10-digit phone> [--split-id <id>] [--write]')
   process.exit(1)
@@ -66,7 +73,7 @@ const contacts = new Map(contactsSnapshot.docs.map((item) => [item.id, item.data
 
 const sourceRows = (source.recipients || []).map((row) => {
   const amount = Number(row.amountPaise) / 100
-  const phone = digits10(contacts.get(String(row.id))?.phone)
+  const phone = digits10(contacts.get(String(row.id))?.phone) || phoneOverrides.get(String(row.name || '').trim().toLowerCase()) || ''
   return {
     sourceId: String(row.id),
     name: String(row.name || '').trim(),
