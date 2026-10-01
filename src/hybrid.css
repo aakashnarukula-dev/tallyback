@@ -1744,6 +1744,10 @@ body:has(.ledger-view-shell) #root {
   min-height: 0;
   flex: 1 1 auto;
   align-content: start;
+  /* The grid has a fixed height and scrolls. Cards clip their overflow, so
+     their minimum size is 0, and once the list is taller than the screen
+     auto rows shrink below the card's content. Rows must size to content. */
+  grid-auto-rows: max-content;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
