@@ -2362,3 +2362,17 @@ body:has(.ledger-view-shell) #root {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Desktop uses the same single-column Splits layout as a phone: the list of
+   full-width cards, then New split below it. The editor is a full-screen
+   overlay at every width, so it needs no column of its own. */
+.split-admin-layout,
+.split-admin-layout.single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+.split-admin-layout .split-list-panel {
+  position: static;
+}
