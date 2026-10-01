@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { splitEditorPath, splitIdFromEditorPath } from './routes'
 import {
   ArrowLeft,
@@ -69,6 +69,15 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     })
   }, [onNotice])
 
+  // A split opened straight from its URL (new tab, typed link) has no list entry behind it,
+  // so slot /splits in underneath; back, swipe and the editor's arrow then all land on the list.
+  useEffect(() => {
+    const path = window.location.pathname
+    if (!splitIdFromEditorPath(path) || window.history.state?.tallyBackSplitEditor) return
+    window.history.replaceState(null, '', splitEditorPath(''))
+    window.history.pushState({ tallyBackSplitEditor: true }, '', path)
+  }, [])
+
   // Back/forward between /splits and /splits/<slug> opens or closes the editor.
   useEffect(() => {
     const syncEditorWithUrl = () => {
@@ -87,8 +96,9 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
   useEffect(() => {
     if (loading || !selectedId || pages.some((page) => page.id === selectedId)) return
     if (splitIdFromEditorPath(window.location.pathname) !== selectedId) return
+    if (window.history.state?.tallyBackSplitEditor) window.history.back()
+    else window.history.replaceState(null, '', splitEditorPath(''))
     setSelectedId('')
-    window.history.replaceState(null, '', splitEditorPath(''))
     // Only checked once the list first loads; later saves add their page a moment after.
   }, [loading])
 
@@ -105,6 +115,23 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     const page = pages.find((item) => item.id === selectedId)
     if (page) setDraft(draftFromPage(page, contacts))
   }, [contacts, pages, selectedId])
+
+  // Escape, or Backspace outside a text field, closes the editor like the back arrow.
+  const editorOpen = creating || Boolean(selectedId)
+  useEffect(() => {
+    if (!editorOpen) return
+    const closeOnKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      const typing = target?.closest('input, textarea, select, [contenteditable="true"]')
+      if (event.key === 'Escape' || (event.key === 'Backspace' && !typing)) {
+        event.preventDefault()
+        closeEditorRef.current()
+      }
+    }
+    window.addEventListener('keydown', closeOnKey)
+    return () => window.removeEventListener('keydown', closeOnKey)
+  }, [editorOpen])
 
   const ownerPhone = normalizePhone(currentUser.phone)
   const total = useMemo(() => draft.recipients.reduce((sum, row) => sum + (Number(row.amount) || 0), 0), [draft.recipients])
@@ -128,6 +155,8 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
   }
 
   function startNew() {
+    // Give the new-split editor its own history entry so back closes it like an open split.
+    if (!window.history.state?.tallyBackSplitEditor) window.history.pushState({ tallyBackSplitEditor: true }, '', splitEditorPath(''))
     setCreating(true)
     setSelectedId('')
     setContacts({})
@@ -135,16 +164,17 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
   }
 
   function closeEditor() {
-    if (splitIdFromEditorPath(window.location.pathname)) {
-      // Step back to the list entry we came from; a split opened straight from a link has none, so swap in /splits.
-      if (window.history.state?.tallyBackSplitEditor) window.history.back()
-      else window.history.replaceState(null, '', splitEditorPath(''))
-    }
+    // Step back to the list entry the editor was opened from.
+    if (window.history.state?.tallyBackSplitEditor) window.history.back()
+    else if (splitIdFromEditorPath(window.location.pathname)) window.history.replaceState(null, '', splitEditorPath(''))
     setCreating(false)
     setSelectedId('')
     setContacts({})
     setDraft(blankDraft())
   }
+
+  const closeEditorRef = useRef(closeEditor)
+  closeEditorRef.current = closeEditor
 
   function updateRecipient(id: string, key: 'name' | 'phone' | 'amount', value: string) {
     setDraft((current) => ({
