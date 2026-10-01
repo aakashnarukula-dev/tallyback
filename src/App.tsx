@@ -122,7 +122,7 @@ import { isValidUpiId, normalizeUpiId } from './upi'
 type Direction = 'receivable' | 'payable'
 type View = 'ledger' | 'activity' | 'splits'
 
-const SPLITS_ENABLED = false
+const SPLITS_ENABLED = true
 
 type ContactSummary = {
   person: Person

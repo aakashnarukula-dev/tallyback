@@ -195,7 +195,10 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
       createdBy: uid,
       updatedAt: serverTimestamp(),
     }
-    if (!existingRecipient) entry.createdAt = serverTimestamp()
+    if (!existingRecipient) {
+      entry.createdAt = serverTimestamp()
+      entry.historyStarted = false
+    }
     batch.set(entryRef, entry, { merge: Boolean(existingRecipient) })
     const activityEntry = { id: entryId, ...entry } as LedgerEntry
     const activity = activityDocument(
