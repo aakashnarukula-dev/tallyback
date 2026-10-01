@@ -1638,8 +1638,9 @@ textarea:focus-visible {
 
 .split-public-hero h1 {
   color: #302e45;
-  font-size: clamp(30px, 6vw, 45px);
-  font-weight: 790;
+  font-family: 'Poppins', sans-serif;
+  font-size: 30px;
+  font-weight: 600;
   letter-spacing: -1.8px;
 }
 
