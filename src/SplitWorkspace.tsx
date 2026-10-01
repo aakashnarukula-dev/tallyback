@@ -134,12 +134,12 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
     }
   }
 
-  async function copyLink() {
-    if (!selectedId) {
+  async function copyLink(splitId = selectedId) {
+    if (!splitId) {
       onNotice('Save the split before copying its link.')
       return
     }
-    const url = `${window.location.origin}/split/${selectedId}`
+    const url = `${window.location.origin}/split/${splitId}`
     try {
       await navigator.clipboard.writeText(url)
       onNotice('Public payment link copied.')
@@ -164,14 +164,29 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
         {pages.length > 0 ? (
           <aside className="split-list-panel">
             <div className="split-list-title"><strong>Your splits</strong><span>{pages.length}</span></div>
-            <div className="split-list">
+            <div className="split-card-list">
               {pages.map((page) => {
-                const paidCount = page.recipients.filter((row) => row.status === 'paid').length
+                const paidRows = page.recipients.filter((row) => row.status === 'paid')
+                const paidAmount = paidRows.reduce((sum, row) => sum + row.amount, 0)
+                const progress = page.totalAmount > 0 ? Math.min(100, Math.round((paidAmount / page.totalAmount) * 100)) : 0
                 return (
-                  <button type="button" key={page.id} className={selectedId === page.id ? 'active' : ''} onClick={() => selectPage(page)}>
-                    <span><strong>{page.title}</strong><small>{paidCount}/{page.recipients.length} paid</small></span>
-                    <em className={page.active ? 'live' : ''}>{page.active ? 'Live' : 'Paused'}</em>
-                  </button>
+                  <article key={page.id} className={`split-card ${selectedId === page.id ? 'active' : ''}`}>
+                    <button type="button" className="split-card-open" onClick={() => selectPage(page)} aria-label={`Open ${page.title}`}>
+                      <span className="split-card-head">
+                        <strong>{page.title}</strong>
+                        <em className={page.active ? 'live' : ''}>{page.active ? 'Live' : 'Paused'}</em>
+                      </span>
+                      <span className="split-card-amounts">
+                        <span>{money.format(paidAmount)} <small>of {money.format(page.totalAmount)}</small></span>
+                        <small>{paidRows.length} of {page.recipients.length} paid</small>
+                      </span>
+                      <span className="split-card-track" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span>
+                    </button>
+                    <div className="split-card-actions">
+                      <button type="button" onClick={() => copyLink(page.id)}><Copy size={14} /> Copy link</button>
+                      <a href={`/split/${page.id}`} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Preview</a>
+                    </div>
+                  </article>
                 )
               })}
             </div>
@@ -192,7 +207,7 @@ export default function SplitWorkspace({ currentUser, onNotice }: { currentUser:
 
           {selectedId ? (
             <div className="split-editor-secondary-actions">
-              <button className="secondary-button" type="button" onClick={copyLink}><Copy size={15} /> Copy link</button>
+              <button className="secondary-button" type="button" onClick={() => copyLink()}><Copy size={15} /> Copy link</button>
               <a className="secondary-button" href={`/split/${selectedId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Preview</a>
             </div>
           ) : null}
