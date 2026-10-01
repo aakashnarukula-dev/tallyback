@@ -142,7 +142,8 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
       amount: row.amount,
       status: existing?.status === 'paid' ? 'paid' : 'pending',
       ...(existing?.paidAt ? { paidAt: existing.paidAt } : {}),
-      ledgerEntryId: existing?.ledgerEntryId || ledgerId(splitId, row.id),
+      // A member added by name only has no due, so no ledger entry to point at.
+      ...(row.phone ? { ledgerEntryId: existing?.ledgerEntryId || ledgerId(splitId, row.id) } : {}),
     }
   })
 
@@ -151,8 +152,15 @@ export async function saveSplitPage(draft: SplitDraft, uid: string, owner: Perso
     ...(existingPage?.recipients ?? []).map((row) => row.ledgerEntryId).filter(Boolean),
   ] as string[])
   const ledgerSnapshots = await Promise.all([...ledgerEntryIds].map(async (entryId) => {
-    const snapshot = await getDoc(doc(database, 'ledgerEntries', entryId))
-    return [entryId, snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } as LedgerEntry : null] as const
+    // The read rule checks the entry's own participants, so reading an entry
+    // that was never created is refused rather than returned empty.
+    try {
+      const snapshot = await getDoc(doc(database, 'ledgerEntries', entryId))
+      return [entryId, snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } as LedgerEntry : null] as const
+    } catch (error) {
+      if ((error as { code?: string }).code === 'permission-denied') return [entryId, null] as const
+      throw error
+    }
   }))
   const existingLedgerEntries = new Map(ledgerSnapshots)
 
