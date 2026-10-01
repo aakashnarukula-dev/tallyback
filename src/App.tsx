@@ -270,6 +270,29 @@ const methods: PaymentMethod[] = [
   'Personal funds',
 ]
 
+type MethodOption = { method: PaymentMethod; label: string; hint?: string }
+
+const dueMethodOptions: MethodOption[] = methods.map((method) => ({ method, label: method }))
+
+// A repayment is not always money handed over: the lender may have spent the
+// borrower's card or money on something, which still comes off the due.
+const repaymentMethodOptions: Record<'record' | 'request', MethodOption[]> = {
+  record: [
+    { method: 'UPI', label: 'UPI', hint: 'They sent it by UPI' },
+    { method: 'Bank transfer', label: 'Bank transfer', hint: 'They sent it to your bank' },
+    { method: 'Cash', label: 'Cash', hint: 'They handed you cash' },
+    { method: 'Credit card', label: 'Used their card', hint: 'You bought something on their card' },
+    { method: 'Personal funds', label: 'Used their money', hint: 'Their money paid for something of yours' },
+  ],
+  request: [
+    { method: 'UPI', label: 'UPI', hint: 'I sent it by UPI' },
+    { method: 'Bank transfer', label: 'Bank transfer', hint: 'I sent it to your bank' },
+    { method: 'Cash', label: 'Cash', hint: 'I handed you cash' },
+    { method: 'Credit card', label: 'You used my card', hint: 'You bought something on my card' },
+    { method: 'Personal funds', label: 'I paid for you', hint: 'My money paid for something of yours' },
+  ],
+}
+
 const today = () => {
   const value = new Date()
   const year = value.getFullYear()
@@ -423,23 +446,25 @@ function DatePicker({ value, onChange, max }: { value: string; onChange: (value:
   )
 }
 
-function MethodPicker({ value, onChange, disabled }: { value: PaymentMethod; onChange: (value: PaymentMethod) => void; disabled?: boolean }) {
+function MethodPicker({ value, onChange, disabled, options = dueMethodOptions }: { value: PaymentMethod; onChange: (value: PaymentMethod) => void; disabled?: boolean; options?: MethodOption[] }) {
   const [open, setOpen] = useState(false)
-  const [activeIndex, setActiveIndex] = useState(() => Math.max(0, methods.indexOf(value)))
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.method === value))
+  const [activeIndex, setActiveIndex] = useState(selectedIndex)
   const [position, setPosition] = useState<CSSProperties>({})
   const triggerRef = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const SelectedIcon = methodIcons[value]
+  const selectedLabel = options[selectedIndex]?.label ?? value
 
   useEffect(() => {
     if (!open) return
     const place = () => {
       const rect = triggerRef.current?.getBoundingClientRect()
       if (!rect) return
-      const listHeight = methods.length * 44 + 14
+      const listHeight = options.length * (options.some((option) => option.hint) ? 52 : 44) + 14
       const below = window.innerHeight - rect.bottom
       const flip = below < listHeight + 12 && rect.top > below
-      const width = Math.min(Math.max(rect.width, 210), window.innerWidth - 24)
+      const width = Math.min(Math.max(rect.width, options.some((option) => option.hint) ? 260 : 210), window.innerWidth - 24)
       setPosition({
         left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)),
         width,
@@ -474,7 +499,7 @@ function MethodPicker({ value, onChange, disabled }: { value: PaymentMethod; onC
 
   function openList() {
     if (disabled) return
-    setActiveIndex(Math.max(0, methods.indexOf(value)))
+    setActiveIndex(selectedIndex)
     setOpen(true)
   }
 
@@ -489,11 +514,11 @@ function MethodPicker({ value, onChange, disabled }: { value: PaymentMethod; onC
   }
 
   function onListKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'ArrowDown') setActiveIndex((index) => (index + 1) % methods.length)
-    else if (event.key === 'ArrowUp') setActiveIndex((index) => (index - 1 + methods.length) % methods.length)
+    if (event.key === 'ArrowDown') setActiveIndex((index) => (index + 1) % options.length)
+    else if (event.key === 'ArrowUp') setActiveIndex((index) => (index - 1 + options.length) % options.length)
     else if (event.key === 'Home') setActiveIndex(0)
-    else if (event.key === 'End') setActiveIndex(methods.length - 1)
-    else if (event.key === 'Enter' || event.key === ' ') choose(methods[activeIndex])
+    else if (event.key === 'End') setActiveIndex(options.length - 1)
+    else if (event.key === 'Enter' || event.key === ' ') choose(options[activeIndex].method)
     else if (event.key === 'Tab') {
       setOpen(false)
       return
@@ -519,7 +544,7 @@ function MethodPicker({ value, onChange, disabled }: { value: PaymentMethod; onC
         }}
       >
         <span className="method-picker-icon"><SelectedIcon size={15} aria-hidden="true" /></span>
-        <span className="method-picker-label">{value}</span>
+        <span className="method-picker-label">{selectedLabel}</span>
         <ChevronDown className="method-picker-chevron" size={16} aria-hidden="true" />
       </button>
       {open ? createPortal(
@@ -533,7 +558,7 @@ function MethodPicker({ value, onChange, disabled }: { value: PaymentMethod; onC
           style={position}
           onKeyDown={onListKeyDown}
         >
-          {methods.map((method, index) => {
+          {options.map(({ method, label, hint }, index) => {
             const Icon = methodIcons[method]
             return (
               <div
@@ -546,7 +571,10 @@ function MethodPicker({ value, onChange, disabled }: { value: PaymentMethod; onC
                 onClick={() => choose(method)}
               >
                 <span className="method-picker-icon"><Icon size={15} aria-hidden="true" /></span>
-                <span>{method}</span>
+                <span className="method-picker-text">
+                  <span>{label}</span>
+                  {hint ? <small>{hint}</small> : null}
+                </span>
                 {method === value ? <Check className="method-picker-check" size={15} aria-hidden="true" /> : null}
               </div>
             )
@@ -2051,7 +2079,7 @@ export function RepaymentModal({
             </label>
             <label>
               Payment method
-              <MethodPicker value={method} onChange={setMethod} disabled={working} />
+              <MethodPicker value={method} onChange={setMethod} disabled={working} options={repaymentMethodOptions[mode]} />
             </label>
             <label className="repayment-note">
               Note
@@ -2383,7 +2411,7 @@ export function BulkPaymentModal({
             </label>
             <label>
               Payment method
-              <MethodPicker value={method} onChange={setMethod} disabled={working} />
+              <MethodPicker value={method} onChange={setMethod} disabled={working} options={repaymentMethodOptions.record} />
             </label>
             <label className="repayment-note">
               Note

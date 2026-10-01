@@ -1622,8 +1622,21 @@ select:focus-visible {
   color: var(--muted);
 }
 
-.method-picker-option > span:nth-child(2) {
+.method-picker-text {
+  min-width: 0;
   flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.method-picker-text small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 550;
+}
+
+.method-picker-option:has(small) {
+  min-height: 50px;
 }
 
 .method-picker-option.active {
