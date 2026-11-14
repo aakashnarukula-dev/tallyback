@@ -53,6 +53,7 @@ import {
   RepaymentRequest,
   SavedContact,
 } from './data'
+import { signOutAllDevices } from './auth-session'
 import { auth, isFirebaseConfigured } from './firebase'
 import {
   createEntry as createFirebaseEntry,
@@ -3676,6 +3677,7 @@ function TallyBackApp() {
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [toast, setToast] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
+  const [signingOutAll, setSigningOutAll] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const ledgerGridRef = useRef<HTMLDivElement>(null)
   const pullStartYRef = useRef<number | null>(null)
@@ -3763,6 +3765,18 @@ function TallyBackApp() {
       const syncVersion = ++authSyncVersion.current
       if (!firebaseUser) {
         setCurrentUser(null)
+        setProfileOpen(false)
+        setSelectedPhone(null)
+        setShowAddPerson(false)
+        setAddDuePerson(null)
+        setEditEntryTarget(null)
+        setReviewIntent(null)
+        setRepaymentIntent(null)
+        setBulkPaymentOpen(false)
+        setUpiIdModalOpen(false)
+        setMyUpiId(undefined)
+        setDeleteEntryTarget(null)
+        setDeleteContactTarget(null)
         setAuthLoading(false)
         return
       }
@@ -4167,6 +4181,19 @@ function TallyBackApp() {
     setRepaymentRequests([])
     setActivities([])
     setProfileOpen(false)
+  }
+
+  async function logoutAllDevices() {
+    if (signingOutAll) return
+    setSigningOutAll(true)
+    try {
+      await signOutAllDevices()
+      await logout()
+    } catch (error) {
+      setToast(actionableFirebaseError(error, 'Could not sign out all devices. Check your connection and retry.'))
+    } finally {
+      setSigningOutAll(false)
+    }
   }
 
   async function saveEntry(entry: LedgerEntry) {
@@ -4581,7 +4608,11 @@ function TallyBackApp() {
                     <Smartphone size={16} />
                     <span className="profile-upi-label">{myUpiId ? <>UPI ID <small>{myUpiId}</small></> : 'Add UPI ID'}</span>
                   </button>
-                  <button onClick={logout}><LogOut size={16} /> Sign out</button>
+                  <button onClick={logout} disabled={signingOutAll}><LogOut size={16} /> Sign out</button>
+                  <button onClick={logoutAllDevices} disabled={signingOutAll}>
+                    {signingOutAll ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />}
+                    {signingOutAll ? 'Signing out all devices…' : 'Sign out of all devices'}
+                  </button>
                 </div>
               )}
             </div>

@@ -5,6 +5,7 @@ TallyBack is a lightweight shared ledger for money borrowed, lent, and split bet
 ## What it includes
 
 - Phone-number-only sign-in with Firebase SMS OTP.
+- Profile-menu **Sign out of all devices** revokes all refresh tokens and broadcasts a private session cutoff. Connected devices running the current app return to sign-in immediately; offline devices sign out when they reconnect. Firestore and Storage rules also reject revoked sessions without waiting for ID-token expiry.
 - Automatic Truecaller sign-in on supported Android browsers, with SMS as fallback and no separate login button.
 - **You owe me** and **I owe you** ledgers shared by the two mobile numbers on each entry.
 - **Dues** view combines direct loans and every split share, grouped by person.
@@ -21,6 +22,8 @@ TallyBack is a lightweight shared ledger for money borrowed, lent, and split bet
 ## Architecture
 
 The Vite/React client is hosted by Firebase Hosting. Firebase Authentication and Cloud Firestore provide identity and live data. Each user's saved people live under `users/{uid}/contacts`. Firebase Storage keeps payment screenshots private behind participant-only rules. The server-only Truecaller callback, and Firebase custom-token minting run in the `tallyback-server` Vercel project under the Aakash Vercel account.
+
+Server-owned `authSessions/{uid}` documents store the revocation cutoff in seconds. Clients may listen only to their own document and cannot write it. Fresh authentication after the cutoff restores access; token refresh alone does not. The API verifies revocation before authenticated operations.
 
 Contact numbers are stored under each split's private `contacts` subcollection. The public split document contains only display names, share amounts, and payment status. Firestore rules scope the ledger to participants and the split editor to its owner. UPI IDs live in `upiProfiles/{phone}`, which only the owner can write and any signed-in member can read so they can pay that person.
 

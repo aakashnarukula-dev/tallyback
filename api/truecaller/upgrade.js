@@ -1,5 +1,6 @@
 import { allowCors } from '../_lib/http.js'
 import { adminAuth, adminDb } from '../_lib/firebase-admin.js'
+import { verifyActiveSession } from '../_lib/auth-session.js'
 import { rateLimit } from '../_lib/rate-limit.js'
 
 function bearerToken(req) {
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
     const idToken = bearerToken(req)
     if (!idToken) return res.status(401).json({ error: 'missing_token' })
 
-    const decoded = await adminAuth().verifyIdToken(idToken)
+    const decoded = await verifyActiveSession(idToken)
     const isCustomSession = decoded.firebase?.sign_in_provider === 'custom'
     if (decoded.loginMethod !== 'truecaller' && !isCustomSession) {
       return res.status(403).json({ error: 'not_truecaller' })

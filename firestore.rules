@@ -2,6 +2,20 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function activeSession() {
+      return request.auth != null
+        && (!exists(/databases/$(database)/documents/authSessions/$(request.auth.uid))
+          || request.auth.token.auth_time > get(
+            /databases/$(database)/documents/authSessions/$(request.auth.uid)
+          ).data.revokedBefore);
+    }
+
+    // Revoked sessions must still receive their own live sign-out signal.
+    match /authSessions/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list, write: if false;
+    }
+
     function tokenPhone() {
       return request.auth == null
         ? ''
@@ -12,7 +26,7 @@ service cloud.firestore {
     }
 
     function signedInWithPhone() {
-      return request.auth != null
+      return activeSession()
         && tokenPhone() is string
         && tokenPhone().size() > 0;
     }
@@ -984,12 +998,12 @@ service cloud.firestore {
     }
 
     function ownsSplit(splitId) {
-      return request.auth != null
+      return activeSession()
         && get(/databases/$(database)/documents/splitPages/$(splitId)).data.ownerUid == request.auth.uid;
     }
 
     function ownsSplitAfterWrite(splitId) {
-      return request.auth != null
+      return activeSession()
         && getAfter(/databases/$(database)/documents/splitPages/$(splitId)).data.ownerUid == request.auth.uid;
     }
 
@@ -1037,7 +1051,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if activeSession() && request.auth.uid == userId;
       allow create: if signedInWithPhone()
         && request.auth.uid == userId
         && request.resource.data.phone == phone()
@@ -1052,11 +1066,11 @@ service cloud.firestore {
     }
 
     match /users/{userId}/contacts/{contactId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow create, update: if request.auth != null
+      allow read: if activeSession() && request.auth.uid == userId;
+      allow create, update: if activeSession()
         && request.auth.uid == userId
         && validContact(request.resource.data, contactId);
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow delete: if activeSession() && request.auth.uid == userId;
     }
 
     match /upiProfiles/{profilePhone} {
@@ -1086,119 +1100,135 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
-      allow update: if isParticipant(resource.data)
-        && phone() == resource.data.borrowerPhone
-        && request.auth.uid != resource.data.createdBy
-        && resource.data.status in ['open', 'partially_paid']
-        && !resource.data.keys().hasAny(['review'])
-        && request.resource.data.keys().hasAny(['review'])
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['review', 'historyStarted', 'updatedAt'])
-        && validPendingReview(request.resource.data.review, resource.data)
-        && !resource.data.keys().hasAny(['pendingRepaymentId'])
-        && request.resource.data.historyStarted == true
-        && request.resource.data.review.requestedByUid == request.auth.uid
-        && request.resource.data.review.requestedByPhone == phone()
-        && request.resource.data.review.createdAt == request.time
-        && request.resource.data.review.updatedAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if isParticipant(resource.data)
-        && request.auth.uid == resource.data.createdBy
-        && phone() == resource.data.lenderPhone
-        && resource.data.keys().hasAny(['review'])
-        && !request.resource.data.keys().hasAny(['review'])
-        && request.resource.data.updatedAt == request.time
-        && (
-          validCorrectionApproval(resource.data, request.resource.data)
-          || validPaidReviewApproval(resource.data, request.resource.data)
-          || validReviewRejection(resource.data, request.resource.data)
-        );
+      // Check participant identity and session once for all update paths.
       allow update: if isParticipant(resource.data)
         && (
           (
-            request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastRepaymentId'])
-            && request.auth.uid == resource.data.createdBy
-            && phone() == resource.data.lenderPhone
+            phone() == resource.data.borrowerPhone
+            && request.auth.uid != resource.data.createdBy
+            && resource.data.status in ['open', 'partially_paid']
             && !resource.data.keys().hasAny(['review'])
+            && request.resource.data.keys().hasAny(['review'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['review', 'historyStarted', 'updatedAt'])
+            && validPendingReview(request.resource.data.review, resource.data)
+            && !resource.data.keys().hasAny(['pendingRepaymentId'])
+            && request.resource.data.historyStarted == true
+            && request.resource.data.review.requestedByUid == request.auth.uid
+            && request.resource.data.review.requestedByPhone == phone()
+            && request.resource.data.review.createdAt == request.time
+            && request.resource.data.review.updatedAt == request.time
+            && request.resource.data.updatedAt == request.time
+          )
+          ||
+          (
+            request.auth.uid == resource.data.createdBy
+            && phone() == resource.data.lenderPhone
+            && resource.data.keys().hasAny(['review'])
+            && !request.resource.data.keys().hasAny(['review'])
             && request.resource.data.updatedAt == request.time
             && (
-              validAcceptedRepaymentEntry(entryId, resource.data, request.resource.data)
-              || validLenderRecordedRepaymentEntry(entryId, resource.data, request.resource.data)
+              validCorrectionApproval(resource.data, request.resource.data)
+              || validPaidReviewApproval(resource.data, request.resource.data)
+              || validReviewRejection(resource.data, request.resource.data)
             )
           )
-          || (
-            request.resource.data.diff(resource.data).affectedKeys().hasAny(['pendingRepaymentId'])
-            && request.auth.uid != resource.data.createdBy
-            && phone() == resource.data.borrowerPhone
-            && validPendingRepaymentEntry(entryId, resource.data, request.resource.data)
+          ||
+          (
+            (
+              (
+                request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastRepaymentId'])
+                && request.auth.uid == resource.data.createdBy
+                && phone() == resource.data.lenderPhone
+                && !resource.data.keys().hasAny(['review'])
+                && request.resource.data.updatedAt == request.time
+                && (
+                  validAcceptedRepaymentEntry(entryId, resource.data, request.resource.data)
+                  || validLenderRecordedRepaymentEntry(entryId, resource.data, request.resource.data)
+                )
+              )
+              || (
+                request.resource.data.diff(resource.data).affectedKeys().hasAny(['pendingRepaymentId'])
+                && request.auth.uid != resource.data.createdBy
+                && phone() == resource.data.borrowerPhone
+                && validPendingRepaymentEntry(entryId, resource.data, request.resource.data)
+              )
+              || (
+                request.resource.data.diff(resource.data).affectedKeys().hasAny(['pendingRepaymentId'])
+                && request.auth.uid == resource.data.createdBy
+                && phone() == resource.data.lenderPhone
+                && validRejectedRepaymentEntry(entryId, resource.data, request.resource.data)
+              )
+              || (
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'historyStarted',
+                  'updatedAt'
+                ])
+                && request.auth.uid == resource.data.createdBy
+                && phone() == resource.data.lenderPhone
+                && request.resource.data.historyStarted == true
+                && request.resource.data.updatedAt == request.time
+              )
+            )
           )
-          || (
-            request.resource.data.diff(resource.data).affectedKeys().hasAny(['pendingRepaymentId'])
-            && request.auth.uid == resource.data.createdBy
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lender', 'borrower', 'updatedAt'])
+            && request.resource.data.updatedAt == request.time
+            && (
+              (
+                phone() == resource.data.lenderPhone
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lender', 'updatedAt'])
+                && request.resource.data.lender.keys().hasOnly(['name', 'phone'])
+                && request.resource.data.lender.phone == resource.data.lender.phone
+                && request.resource.data.lender.name == get(
+                  /databases/$(database)/documents/users/$(request.auth.uid)
+                ).data.name
+              )
+              || (
+                phone() == resource.data.borrowerPhone
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['borrower', 'updatedAt'])
+                && request.resource.data.borrower.keys().hasOnly(['name', 'phone'])
+                && request.resource.data.borrower.phone == resource.data.borrower.phone
+                && request.resource.data.borrower.name == get(
+                  /databases/$(database)/documents/users/$(request.auth.uid)
+                ).data.name
+              )
+            )
+          )
+          ||
+          (
+            request.auth.uid == resource.data.createdBy
             && phone() == resource.data.lenderPhone
-            && validRejectedRepaymentEntry(entryId, resource.data, request.resource.data)
+            && !resource.data.keys().hasAny(['review'])
+            && !resource.data.keys().hasAny(['pendingRepaymentId'])
+            && !request.resource.data.keys().hasAny(['review'])
+            && request.resource.data.status != 'paid'
+            && request.resource.data.get('lastRepaymentId', '') == resource.data.get('lastRepaymentId', '')
+            && validEntryEdit(resource.data, request.resource.data)
           )
-          || (
+          ||
+          (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'historyStarted',
+              'originalAmount',
+              'paidAmount',
+              'remainingAmount',
+              'status',
+              'settledAt',
               'updatedAt'
             ])
             && request.auth.uid == resource.data.createdBy
             && phone() == resource.data.lenderPhone
-            && request.resource.data.historyStarted == true
+            && !resource.data.keys().hasAny(['review'])
+            && resource.data.status in ['open', 'partially_paid']
+            && request.resource.data.originalAmount == originalAmount(resource.data)
+            && request.resource.data.paidAmount == originalAmount(resource.data)
+            && request.resource.data.remainingAmount == 0
+            && request.resource.data.status == 'paid'
+            && request.resource.data.settledAt is string
             && request.resource.data.updatedAt == request.time
           )
         );
-      allow update: if isParticipant(resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lender', 'borrower', 'updatedAt'])
-        && request.resource.data.updatedAt == request.time
-        && (
-          (
-            phone() == resource.data.lenderPhone
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lender', 'updatedAt'])
-            && request.resource.data.lender.keys().hasOnly(['name', 'phone'])
-            && request.resource.data.lender.phone == resource.data.lender.phone
-            && request.resource.data.lender.name == get(
-              /databases/$(database)/documents/users/$(request.auth.uid)
-            ).data.name
-          )
-          || (
-            phone() == resource.data.borrowerPhone
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['borrower', 'updatedAt'])
-            && request.resource.data.borrower.keys().hasOnly(['name', 'phone'])
-            && request.resource.data.borrower.phone == resource.data.borrower.phone
-            && request.resource.data.borrower.name == get(
-              /databases/$(database)/documents/users/$(request.auth.uid)
-            ).data.name
-          )
-        );
-      allow update: if isParticipant(resource.data)
-        && request.auth.uid == resource.data.createdBy
-        && phone() == resource.data.lenderPhone
-        && !resource.data.keys().hasAny(['review'])
-        && !resource.data.keys().hasAny(['pendingRepaymentId'])
-        && !request.resource.data.keys().hasAny(['review'])
-        && request.resource.data.status != 'paid'
-        && request.resource.data.get('lastRepaymentId', '') == resource.data.get('lastRepaymentId', '')
-        && validEntryEdit(resource.data, request.resource.data);
-      allow update: if isParticipant(resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'originalAmount',
-          'paidAmount',
-          'remainingAmount',
-          'status',
-          'settledAt',
-          'updatedAt'
-        ])
-        && request.auth.uid == resource.data.createdBy
-        && phone() == resource.data.lenderPhone
-        && !resource.data.keys().hasAny(['review'])
-        && resource.data.status in ['open', 'partially_paid']
-        && request.resource.data.originalAmount == originalAmount(resource.data)
-        && request.resource.data.paidAmount == originalAmount(resource.data)
-        && request.resource.data.remainingAmount == 0
-        && request.resource.data.status == 'paid'
-        && request.resource.data.settledAt is string
-        && request.resource.data.updatedAt == request.time;
+
       allow delete: if isParticipant(resource.data)
         && request.auth.uid == resource.data.createdBy
         && resource.data.lenderPhone == phone()
@@ -1257,13 +1287,13 @@ service cloud.firestore {
 
     match /splitPages/{splitId} {
       allow read: if resource.data.active == true
-        || (request.auth != null && resource.data.ownerUid == request.auth.uid);
-      allow create: if request.auth != null
+        || (activeSession() && resource.data.ownerUid == request.auth.uid);
+      allow create: if activeSession()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && validSplit(request.resource.data);
-      allow update: if request.auth != null
+      allow update: if activeSession()
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.createdAt == resource.data.createdAt

@@ -11,6 +11,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   or,
   query,
   runTransaction,
@@ -1036,6 +1037,58 @@ try {
     eventDate: '2026-10-02',
   })
   await assertSucceeds(editSplit.commit())
+
+  // Two open sessions receive the cutoff, even after losing private-data access.
+  const revocationUid = 'revocation-test-owner'
+  const oldSession = testEnvironment.authenticatedContext(revocationUid, {
+    phone_number: lenderPhone, auth_time: 100,
+  })
+  const sameSecondSession = testEnvironment.authenticatedContext(revocationUid, {
+    phone_number: lenderPhone, auth_time: 101,
+  })
+  const freshSession = testEnvironment.authenticatedContext(revocationUid, {
+    phone_number: lenderPhone, auth_time: 102,
+  })
+  const sessionDoc = (context) => doc(context.firestore(), 'authSessions', revocationUid)
+  await assertSucceeds(getDoc(sessionDoc(oldSession)))
+  await assertFails(setDoc(sessionDoc(oldSession), { revokedBefore: 101 }))
+  await assertFails(getDoc(doc(lenderDatabase, 'authSessions', revocationUid)))
+  await assertFails(getDocs(collection(oldSession.firestore(), 'authSessions')))
+  await assertSucceeds(getDoc(doc(oldSession.firestore(), 'ledgerEntries', dueId)))
+  const watchRevocation = (context) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { stop(); reject(new Error('Live sign-out signal timed out')) }, 5000)
+    const stop = onSnapshot(sessionDoc(context), (snapshot) => {
+      if (snapshot.data()?.revokedBefore !== 101) return
+      clearTimeout(timer)
+      stop()
+      resolve()
+    }, reject)
+  })
+  const liveSignals = [watchRevocation(oldSession), watchRevocation(sameSecondSession)]
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(sessionDoc(context), { revokedBefore: 101 })
+  })
+  await Promise.all(liveSignals)
+  for (const revoked of [oldSession, sameSecondSession]) {
+    await assertFails(getDoc(doc(revoked.firestore(), 'ledgerEntries', dueId)))
+    await assertFails(getDoc(doc(revoked.firestore(), 'users', revocationUid)))
+    await assertFails(getDocs(collection(revoked.firestore(), 'users', revocationUid, 'contacts')))
+    await assertFails(setDoc(doc(revoked.firestore(), 'users', revocationUid, 'contacts', '9154195668'), {
+      ...borrower, source: 'manual', updatedAt: serverTimestamp(),
+    }))
+    await assertFails(getDoc(doc(revoked.firestore(), 'upiProfiles', lenderPhone)))
+    await assertFails(uploadString(storageRef(revoked.storage(), `ledgerEntries/new-upload/${revocationUid}/proof.png`), 'proof', 'raw', { contentType: 'image/png' }))
+    await assertSucceeds(getDoc(sessionDoc(revoked)))
+    await assertFails(deleteDoc(sessionDoc(revoked)))
+  }
+  await assertSucceeds(getDoc(doc(freshSession.firestore(), 'ledgerEntries', dueId)))
+  await assertSucceeds(uploadString(storageRef(freshSession.storage(), `ledgerEntries/new-upload/${revocationUid}/proof.png`), 'proof', 'raw', { contentType: 'image/png' }))
+  for (const revoked of [oldSession, sameSecondSession]) {
+    const proof = storageRef(revoked.storage(), `ledgerEntries/new-upload/${revocationUid}/proof.png`)
+    await assertFails(getMetadata(proof))
+    await assertFails(deleteObject(proof))
+  }
+  console.log('Session revocation: live signals on two devices, private access denied for old/same-second tokens, metadata protected, fresh login accepted.')
 
   console.log('Firestore and Storage rules: borrower review, lender-recorded offline payments, partial balances, duplicate protection, retained paid dues, source-bound activity, immutable proof, immutable identities, owner-only UPI IDs, and private proof access passed.')
 } finally {

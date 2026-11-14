@@ -2,8 +2,16 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    function signedInWithPhone() {
+    function activeSession() {
       return request.auth != null
+        && (!firestore.exists(/databases/(default)/documents/authSessions/$(request.auth.uid))
+          || request.auth.token.auth_time > firestore.get(
+            /databases/(default)/documents/authSessions/$(request.auth.uid)
+          ).data.revokedBefore);
+    }
+
+    function signedInWithPhone() {
+      return activeSession()
         && tokenPhone() is string
         && tokenPhone().size() > 0;
     }
@@ -33,7 +41,7 @@ service firebase.storage {
     }
 
     function mayDeleteUnsubmittedUpload(entryId, uploaderUid) {
-      return request.auth != null
+      return activeSession()
         && request.auth.uid == uploaderUid
         && (
           !firestore.exists(
@@ -50,7 +58,7 @@ service firebase.storage {
       // identity is enforced again when the ledger document is created.
       // Avoid rejecting a valid, freshly-created phone session while its ID
       // token is still missing the mirrored phone claim.
-      allow create: if request.auth != null
+      allow create: if activeSession()
         && request.auth.uid == uploaderUid
         && (
           !firestore.exists(

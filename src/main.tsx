@@ -6,12 +6,16 @@ import '@fontsource-variable/manrope'
 import '@fontsource-variable/fredoka'
 import '@fontsource/poppins/600.css'
 import App from './App'
+import { auth, db } from './firebase'
+import { monitorAuthSessions } from './auth-session'
 import './styles.css'
 import './splits.css'
 import './pastel.css'
 import './hybrid.css'
 import './performance.css'
 import './skeleton.css'
+
+if (auth && db) monitorAuthSessions(auth, db)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
