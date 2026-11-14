@@ -921,8 +921,8 @@ function LoginScreen({
           <h1>Every shared expense. One clear story.</h1>
           <div className="story-note">
             <div className="story-note-top">
-              <Avatar person={{ name: 'Surya', phone: '9988776655' }} />
-              <span>Surya owes you</span>
+              <Avatar person={{ name: 'Lalith', phone: '9988776655' }} />
+              <span>Lalith owes you</span>
               <strong>{money.format(18450)}</strong>
             </div>
             <div className="story-line">
